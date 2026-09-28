@@ -18,6 +18,7 @@
 - Retired the repository `FEATURE-ROADMAP.md` control model.
 - Removed the obsolete requirement to synchronize feature-roadmap authority with Google Drive.
 - Preserved `FEATURES.md` as a product-facing feature description rather than lifecycle authority.
+- Added an identifier-level migration ledger for legacy Drive roadmap records FR-001 through FR-013, preserving Identity, E2EE, Data transport, native-send readiness, calling, sync/recovery, and conversation obligations while reconciling stale version-specific wording to current governance.
 
 ### Lifecycle boundary
 
