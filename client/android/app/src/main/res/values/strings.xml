@@ -10,4 +10,24 @@
     <string name="provenance_summary">Examples demonstrate how the client must label actual transport and verified protection. They are not live conversations or service state.</string>
     <string name="platform_heading">RC integration boundary</string>
     <string name="platform_summary">Release qualification still requires accepted GoreeCloud Identity, Wardveil Security, Privacy Shield, Everkeep, Mesh, Manager, GoreeCloud Policy, GoreeCloud Observability, current Glaze UI application acceptance, representative-device accessibility, recovery, signing, and release evidence.</string>
+    <string name="help_and_guidance">Help &amp; guidance</string>
+    <string name="help_and_guidance_content_description">Open Messenger help, startup guide, and contextual hint controls</string>
+    <string name="startup_guide_title">Welcome to GoreeCloud Messenger</string>
+    <string name="startup_step_progress">Step %1$d of %2$d</string>
+    <string name="startup_step_disconnected_title">This Development client is disconnected</string>
+    <string name="startup_step_disconnected_body">There is no live account, network transport, message storage, composer, or Send action in this build. The visible screens demonstrate client structure and communication provenance only.</string>
+    <string name="startup_step_authority_title">Secure messaging must earn its authority</string>
+    <string name="startup_step_authority_body">Identity, exact conversation authorization, GoreeCloud Data transport, and exact-conversation E2EE are separate prerequisites. Missing or unknown evidence fails closed instead of being presented as ready.</string>
+    <string name="startup_step_privacy_title">Privacy and provenance stay explicit</string>
+    <string name="startup_step_privacy_body">This Android Development artifact requests no Internet, contacts, SMS, phone, microphone, or camera permission and keeps Android backup disabled. Transport and protection labels are examples until live capabilities are separately implemented and accepted.</string>
+    <string name="guide_back">Back</string>
+    <string name="guide_next">Next</string>
+    <string name="guide_finish">Finish</string>
+    <string name="guide_close">Close</string>
+    <string name="guidance_menu_title">Messenger guidance</string>
+    <string name="guidance_menu_body">Replay the startup guide at any time or turn contextual hints on or off globally. These controls do not activate Identity, messaging, networking, storage, E2EE, or calling.</string>
+    <string name="replay_startup_guide">Replay startup guide</string>
+    <string name="turn_contextual_hints_off">Turn contextual hints off</string>
+    <string name="turn_contextual_hints_on">Turn contextual hints on</string>
+    <string name="contextual_hint_disconnected">Tip: Data send remains unavailable until Identity, conversation authorization, Data transport, and E2EE are independently accepted.</string>
 </resources>
