@@ -5,6 +5,18 @@
 **Lifecycle:** Development / nonconformant  
 **Governing standard:** Standard — Repository Feature Tracking and Changelog Governance v1.0, effective September 22, 2026.
 
+## 2026-09-28 — Draft first-use guidance candidate
+
+### Added on the unmerged candidate branch
+
+- Mandatory three-step first-use guidance with persisted interruption/resume state.
+- Replayable **Help & guidance** and a global contextual-hints on/off control.
+- Android runtime/JVM coverage and a fail-closed source validator that permits only three non-message guidance preference keys while continuing to reject messaging/network/credential/cryptographic storage authority.
+
+### Validation boundary
+
+Exact-head Messenger Foundation and Android Client/emulator workflows passed after the runtime acceptance test was narrowed from “no interaction at all” to “no messaging-authority interaction.” This remains Draft Development evidence; live Identity, Data transport, E2EE, messaging persistence, representative-device acceptance, release, production, and Stable status remain open.
+
 ## 2026-09-22 — Repository feature/changelog governance migration
 
 ### Added
