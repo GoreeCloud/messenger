@@ -12,6 +12,7 @@ Items here are planned, incomplete, blocked, or acceptance-gated. Their presence
 
 ## Current stabilization obligations
 
+- Integrate and independently review the current first-use-guidance candidate after exact-head Android/build/emulator validation; then complete representative-device, accessibility, form-factor, persistence/recovery, and protected-signing acceptance for onboarding before treating it as accepted product behavior.
 - Connect a production GoreeCloud Identity adapter and verify exact account/session/device authority.
 - Establish producer-authoritative exact conversation authorization in the connected runtime.
 - Connect and accept the GoreeCloud Data transport without weakening the current fail-closed no-network/no-Send boundary before readiness is proven.
