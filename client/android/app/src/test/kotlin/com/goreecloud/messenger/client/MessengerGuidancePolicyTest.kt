@@ -13,6 +13,42 @@ class MessengerGuidancePolicyTest {
     }
 
     @Test
+    fun contextualHintRequiresCompletionGlobalEnablementAndUndismissedState() {
+        assertEquals(
+            true,
+            MessengerGuidancePolicy.shouldShowContextualHint(
+                firstUseComplete = true,
+                hintsEnabled = true,
+                hintDismissed = false,
+            ),
+        )
+        assertEquals(
+            false,
+            MessengerGuidancePolicy.shouldShowContextualHint(
+                firstUseComplete = false,
+                hintsEnabled = true,
+                hintDismissed = false,
+            ),
+        )
+        assertEquals(
+            false,
+            MessengerGuidancePolicy.shouldShowContextualHint(
+                firstUseComplete = true,
+                hintsEnabled = false,
+                hintDismissed = false,
+            ),
+        )
+        assertEquals(
+            false,
+            MessengerGuidancePolicy.shouldShowContextualHint(
+                firstUseComplete = true,
+                hintsEnabled = true,
+                hintDismissed = true,
+            ),
+        )
+    }
+
+    @Test
     fun navigationStopsAtFinalStep() {
         assertEquals(1, MessengerGuidancePolicy.nextStep(0))
         assertEquals(2, MessengerGuidancePolicy.nextStep(1))
