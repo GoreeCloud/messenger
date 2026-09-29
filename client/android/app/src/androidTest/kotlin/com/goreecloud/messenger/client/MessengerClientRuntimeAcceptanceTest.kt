@@ -121,7 +121,7 @@ class MessengerClientRuntimeAcceptanceTest {
         // boundary fail-closed by allowing only the explicit Help entry in the underlying shell;
         // no composer, send, call, provider, or transport action may become interactive here.
         val interactiveViews = collectViews(root).filter {
-            it.visibility == View.VISIBLE && (it.isClickable || it.isLongClickable)
+            it.isShown && (it.isClickable || it.isLongClickable)
         }
         val interactiveLabels = interactiveViews
             .mapNotNull { view -> (view as? TextView)?.text?.toString()?.trim() }
