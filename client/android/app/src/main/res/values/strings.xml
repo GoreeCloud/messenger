@@ -30,4 +30,6 @@
     <string name="turn_contextual_hints_off">Turn contextual hints off</string>
     <string name="turn_contextual_hints_on">Turn contextual hints on</string>
     <string name="contextual_hint_disconnected">Tip: Data send remains unavailable until Identity, conversation authorization, Data transport, and E2EE are independently accepted.</string>
+    <string name="dismiss_contextual_hint">Dismiss tip</string>
+    <string name="reset_dismissed_hints">Show dismissed tips again</string>
 </resources>
