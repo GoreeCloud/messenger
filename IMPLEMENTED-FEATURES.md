@@ -12,6 +12,10 @@ This record describes behavior implemented in the current GoreeCloud Messenger D
 
 `FEATURES.md` remains the product-facing feature description. This file is the lifecycle authority for what is implemented.
 
+## Candidate-only Development capability on this branch
+
+The current Draft onboarding candidate adds mandatory three-step first-use guidance, persisted interruption/resume state, replayable **Help & guidance**, and globally disableable contextual hints. Its preference storage is statically bounded to setup completion/current-step/hint-toggle metadata and must not persist message, conversation, account, credential, plaintext, ciphertext, or cryptographic authority. This paragraph is candidate evidence only until integration; it does not override the current-main authority rule below.
+
 ## Implemented Development capabilities
 
 ### Android client boundary
