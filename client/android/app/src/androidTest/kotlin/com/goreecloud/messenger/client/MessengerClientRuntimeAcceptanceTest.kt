@@ -10,7 +10,9 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertFalse
+import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -22,9 +24,27 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class MessengerClientRuntimeAcceptanceTest {
+    private lateinit var context: Context
+
+    @Before
+    fun resetGuidanceStateBeforeTest() {
+        context = ApplicationProvider.getApplicationContext()
+        context.getSharedPreferences(
+            MessengerGuidanceStore.PREFERENCES_NAME,
+            Context.MODE_PRIVATE,
+        ).edit().clear().commit()
+    }
+
+    @After
+    fun resetGuidanceStateAfterTest() {
+        context.getSharedPreferences(
+            MessengerGuidanceStore.PREFERENCES_NAME,
+            Context.MODE_PRIVATE,
+        ).edit().clear().commit()
+    }
+
     @Test
     fun launchPreservesVisibleDevelopmentBoundaryAndRestrictedAuthority() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0x00001000)
         val requestedPermissions = packageInfo.requestedPermissions.orEmpty().toSet()
         val forbiddenPermissions = setOf(
@@ -97,12 +117,27 @@ class MessengerClientRuntimeAcceptanceTest {
         // A disconnected provenance/readiness preview must not grow a live message-send control.
         assertFalse(visibleText.any { it.trim().equals("Send", ignoreCase = true) })
 
-        // The current disconnected shell is intentionally read-only. A clickable or long-clickable
-        // descendant would widen runtime authority beyond the accepted Development presentation.
+        // Guidance controls are presentation-only and may be interactive. Keep the authority
+        // boundary fail-closed by allowing only the explicit Help entry in the underlying shell;
+        // no composer, send, call, provider, or transport action may become interactive here.
         val interactiveViews = collectViews(root).filter { it.isClickable || it.isLongClickable }
+        val interactiveLabels = interactiveViews
+            .mapNotNull { view -> (view as? TextView)?.text?.toString()?.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
         assertTrue(
-            "Disconnected Development shell must remain read-only and non-interactive",
-            interactiveViews.isEmpty(),
+            "Disconnected Development shell may expose only bounded guidance interaction",
+            interactiveLabels == setOf("Help & guidance"),
+        )
+        assertFalse(
+            "Disconnected Development shell must not expose messaging-authority controls",
+            interactiveLabels.any { label ->
+                label.equals("Send", ignoreCase = true) ||
+                    label.contains("Compose", ignoreCase = true) ||
+                    label.contains("Call", ignoreCase = true) ||
+                    label.contains("Connect", ignoreCase = true) ||
+                    label.contains("Sign in", ignoreCase = true)
+            },
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
