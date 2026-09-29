@@ -19,6 +19,7 @@ import android.widget.TextView
 
 class MessengerClientActivity : Activity() {
     private lateinit var guidanceStore: MessengerGuidanceStore
+    private lateinit var contextualHintContainer: LinearLayout
     private lateinit var contextualHintLabel: TextView
     private var guidanceDialog: Dialog? = null
 
@@ -99,16 +100,38 @@ class MessengerClientActivity : Activity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ),
         )
+        contextualHintContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+            visibility = View.GONE
+        }
         contextualHintLabel = text(
             getString(R.string.contextual_hint_disconnected),
             14f,
             colors.muted,
             Typeface.NORMAL,
-        ).apply {
-            setPadding(0, dp(8), 0, 0)
-            visibility = View.GONE
-        }
-        content.addView(contextualHintLabel)
+        )
+        contextualHintContainer.addView(
+            contextualHintLabel,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        contextualHintContainer.addView(
+            Button(this).apply {
+                text = getString(R.string.dismiss_contextual_hint)
+                setAllCaps(false)
+                contentDescription = getString(R.string.dismiss_contextual_hint)
+                setOnClickListener {
+                    guidanceStore.dismissMainContextualHint()
+                    refreshContextualHint()
+                }
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        content.addView(contextualHintContainer)
         content.addView(spacer(16))
         content.addView(text(getString(R.string.development_title), 17f, colors.text, Typeface.BOLD))
         content.addView(spacer(4))
@@ -352,6 +375,10 @@ class MessengerClientActivity : Activity() {
         val hintButton = Button(this).apply {
             setAllCaps(false)
         }
+        val resetHintsButton = Button(this).apply {
+            text = getString(R.string.reset_dismissed_hints)
+            setAllCaps(false)
+        }
         val closeButton = Button(this).apply {
             text = getString(R.string.guide_close)
             setAllCaps(false)
@@ -376,12 +403,20 @@ class MessengerClientActivity : Activity() {
             renderHintButton()
             refreshContextualHint()
         }
+        resetHintsButton.visibility =
+            if (guidanceStore.isMainContextualHintDismissed()) View.VISIBLE else View.GONE
+        resetHintsButton.setOnClickListener {
+            guidanceStore.resetDismissedContextualHints()
+            resetHintsButton.visibility = View.GONE
+            refreshContextualHint()
+        }
         closeButton.setOnClickListener { dialog.dismiss() }
 
         panel.addView(title)
         panel.addView(body)
         panel.addView(replayButton)
         panel.addView(hintButton)
+        panel.addView(resetHintsButton)
         panel.addView(closeButton)
 
         dialog.setOnDismissListener {
@@ -399,11 +434,14 @@ class MessengerClientActivity : Activity() {
     }
 
     private fun refreshContextualHint() {
-        if (!::contextualHintLabel.isInitialized || !::guidanceStore.isInitialized) return
-        contextualHintLabel.visibility =
+        if (!::contextualHintContainer.isInitialized || !::guidanceStore.isInitialized) return
+        contextualHintContainer.visibility =
             if (
-                guidanceStore.isFirstUseComplete() &&
-                guidanceStore.areContextualHintsEnabled()
+                MessengerGuidancePolicy.shouldShowContextualHint(
+                    firstUseComplete = guidanceStore.isFirstUseComplete(),
+                    hintsEnabled = guidanceStore.areContextualHintsEnabled(),
+                    hintDismissed = guidanceStore.isMainContextualHintDismissed(),
+                )
             ) {
                 View.VISIBLE
             } else {
