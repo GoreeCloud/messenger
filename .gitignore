@@ -1,0 +1,33 @@
+# Go build and test output
+bin/
+*.test
+*.out
+coverage/
+coverage.*
+
+# Android and Gradle
+client/android/.gradle/
+client/android/**/build/
+client/android/local.properties
+
+# Editors and local workspace state
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# Environment and local secret-bearing configuration
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
