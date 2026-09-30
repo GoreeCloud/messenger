@@ -112,7 +112,7 @@ func (h *Handler) submitMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if decoder.Decode(&struct{}{}) == nil {
+	if hasUnexpectedTrailingJSON(decoder) {
 		writeError(w, http.StatusBadRequest, "request body must contain one JSON object")
 		return
 	}
@@ -184,7 +184,7 @@ func (h *Handler) recordReceipt(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if decoder.Decode(&struct{}{}) == nil {
+	if hasUnexpectedTrailingJSON(decoder) {
 		writeError(w, http.StatusBadRequest, "request body must contain one JSON object")
 		return
 	}
