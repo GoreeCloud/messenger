@@ -39,7 +39,8 @@ After configuration is accepted, the executable can report a minimized categoric
 - `internal/api/` — authenticated HTTP transport plus the unified application-facing Data route-composition boundary and optional typing/privacy routes
 - `internal/runtimeconfig/` — fail-closed process configuration derivation and minimized diagnostic projection for currently implemented runtime options
 - `docs/architecture.md` — product architecture and trust boundaries
-- `docs/security.md` — encryption and security constraints
+- `.github/SECURITY.md` — encryption, security, and vulnerability-reporting constraints
+- `docs/PRIVACY.md` — current Development privacy boundary
 - `docs/data-messaging.md` — Data service authorization, storage, retry, and carrier-separation contract
 - `docs/data-http-api.md` — HTTP API, authentication, authorization, receipt, attachment, runtime composition, and privacy boundary
 - `docs/durable-receipt-store.md` — file durability, runtime selection, and environment-configuration boundaries
@@ -48,11 +49,18 @@ After configuration is accepted, the executable can report a minimized categoric
 
 ## Documentation
 
-- [USER-MANUAL.md](USER-MANUAL.md)
-- [SPECIFICATIONS.md](SPECIFICATIONS.md)
-- [FEATURES.md](FEATURES.md)
-- [BENEFITS.md](BENEFITS.md)
-- [COMPETITIVE-OBJECTIVES.md](COMPETITIVE-OBJECTIVES.md)
+- [docs/USER-MANUAL.md](docs/USER-MANUAL.md)
+- [docs/SPECIFICATIONS.md](docs/SPECIFICATIONS.md)
+- [docs/FEATURES.md](docs/FEATURES.md)
+- [docs/IMPLEMENTED-FEATURES.md](docs/IMPLEMENTED-FEATURES.md)
+- [docs/PLANNED-FEATURES.md](docs/PLANNED-FEATURES.md)
+- [docs/CHANGELOGS.md](docs/CHANGELOGS.md)
+- [docs/BENEFITS.md](docs/BENEFITS.md)
+- [docs/COMPETITIVE-OBJECTIVES.md](docs/COMPETITIVE-OBJECTIVES.md)
+- [docs/BRANDING.md](docs/BRANDING.md)
+- [docs/NOTES.md](docs/NOTES.md)
+- [docs/PRIVACY.md](docs/PRIVACY.md)
+- [.github/SECURITY.md](.github/SECURITY.md)
 
 ## Client status
 

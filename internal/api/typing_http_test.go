@@ -138,3 +138,21 @@ func TestTypingHTTPRejectsCallerSuppliedUserIdentity(t *testing.T) {
 		t.Fatalf("caller-supplied user identity status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestTypingHTTPRejectsTrailingJSONValue(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	service, _ := newTypingHTTPTestService(t, &now)
+	handler := newTypingHTTPHandler(t, service, "user-1")
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/data/conversations/conversation-typing-http/typing",
+		strings.NewReader(`{"sequence":1,"state":"typing"}{"draft":"must-not-be-ignored"}`),
+	)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("trailing typing JSON status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}

@@ -65,7 +65,7 @@ func (h *TypingHTTPHandler) publish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if decoder.Decode(&struct{}{}) == nil {
+	if hasUnexpectedTrailingJSON(decoder) {
 		writeError(w, http.StatusBadRequest, "request body must contain one JSON object")
 		return
 	}

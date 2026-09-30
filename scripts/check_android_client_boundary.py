@@ -12,6 +12,7 @@ CLIENT_KOTLIN = CLIENT / "kotlin" / "com" / "goreecloud" / "messenger" / "client
 READINESS = CLIENT_KOTLIN / "DataMessagingReadiness.kt"
 AUTHORITIES = CLIENT_KOTLIN / "DataMessagingAuthorityResolver.kt"
 COORDINATOR = CLIENT_KOTLIN / "DataMessageSendCoordinator.kt"
+GUIDANCE_STORE = CLIENT_KOTLIN / "MessengerGuidanceStore.kt"
 
 errors: list[str] = []
 
@@ -42,7 +43,7 @@ else:
 for path in CLIENT.rglob("*.kt"):
     text = path.read_text(encoding="utf-8")
     relative = path.relative_to(ROOT)
-    forbidden_fragments = (
+    forbidden_fragments = [
         "java.net.",
         "javax.net.",
         "java.security.",
@@ -51,14 +52,57 @@ for path in CLIENT.rglob("*.kt"):
         "retrofit",
         "http://",
         "https://",
-        "SharedPreferences",
-        "getSharedPreferences(",
         "RoomDatabase",
         "SQLiteDatabase",
-    )
+    ]
+    if path != GUIDANCE_STORE:
+        forbidden_fragments.extend(
+            (
+                "SharedPreferences",
+                "getSharedPreferences(",
+            ),
+        )
     for fragment in forbidden_fragments:
         if fragment in text:
             errors.append(f"{relative}: forbidden Development client authority fragment {fragment!r}")
+
+if not GUIDANCE_STORE.is_file():
+    errors.append("Messenger first-use guidance preference store is missing")
+else:
+    guidance_store_text = GUIDANCE_STORE.read_text(encoding="utf-8")
+    for required in (
+        'PREFERENCES_NAME = "goreecloud_messenger_guidance"',
+        'KEY_FIRST_USE_COMPLETE = "first_use_complete"',
+        'KEY_CURRENT_STEP = "current_step"',
+        'KEY_CONTEXTUAL_HINTS_ENABLED = "contextual_hints_enabled"',
+    ):
+        if required not in guidance_store_text:
+            errors.append(
+                f"Messenger guidance store is missing bounded preference contract {required!r}",
+            )
+    if ".apply()" in guidance_store_text:
+        errors.append(
+            "Messenger guidance store must use synchronous commit() so UI state cannot outrun durable setup state",
+        )
+    if ".commit()" not in guidance_store_text:
+        errors.append(
+            "Messenger guidance store is missing synchronous durable preference commits",
+        )
+
+    for forbidden in (
+        "message_id",
+        "conversation_id",
+        "account_id",
+        "identity_token",
+        "access_token",
+        "refresh_token",
+        "ciphertext",
+        "plaintext",
+    ):
+        if forbidden in guidance_store_text.lower():
+            errors.append(
+                f"Messenger guidance store must not persist messaging/authority data {forbidden!r}",
+            )
 
 if APP_BUILD.is_file():
     build_text = APP_BUILD.read_text(encoding="utf-8").lower()

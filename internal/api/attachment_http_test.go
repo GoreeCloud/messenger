@@ -116,3 +116,16 @@ func TestAttachmentGetReturnsNotFound(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestAttachmentSubmitRejectsTrailingJSONValue(t *testing.T) {
+	handler := newTestAttachmentHandler(t, "user-1")
+	body := `{"attachment_id":"attachment-trailing","conversation_id":"conversation-1","sender_id":"user-1","client_nonce":"attachment-trailing-nonce","filename":"photo.jpg","mime_type":"image/jpeg","ciphertext":"Y2lwaGVydGV4dA=="}{"plaintext":"must-not-be-ignored"}`
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/data/attachments", strings.NewReader(body))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("trailing attachment JSON status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}

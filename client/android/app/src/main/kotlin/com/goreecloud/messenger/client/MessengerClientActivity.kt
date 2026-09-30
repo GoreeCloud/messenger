@@ -2,19 +2,27 @@ package com.goreecloud.messenger.client
 
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.app.Dialog
 import android.content.res.Configuration
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
 class MessengerClientActivity : Activity() {
+    private lateinit var guidanceStore: MessengerGuidanceStore
+    private lateinit var contextualHintContainer: LinearLayout
+    private lateinit var contextualHintLabel: TextView
+    private var guidanceDialog: Dialog? = null
+
     private val runtimePresentation: GlazeMessengerResolvedPresentation
         get() = GlazeMessengerPresentationPolicy.resolve(
             requestedMaterial = GlazeMessengerMaterialRole.RAISED,
@@ -34,9 +42,21 @@ class MessengerClientActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        guidanceStore = MessengerGuidanceStore(this)
         window.navigationBarColor = palette().canvas
         window.statusBarColor = palette().canvas
         setContentView(buildContent())
+        refreshContextualHint()
+
+        if (!guidanceStore.isFirstUseComplete()) {
+            showStartupGuide(replay = false)
+        }
+    }
+
+    override fun onDestroy() {
+        guidanceDialog?.dismiss()
+        guidanceDialog = null
+        super.onDestroy()
     }
 
     private fun buildContent(): View {
@@ -64,6 +84,56 @@ class MessengerClientActivity : Activity() {
 
         content.addView(heading("GoreeCloud Messenger", 30f, colors.text))
         content.addView(spacer(8))
+        content.addView(
+            Button(this).apply {
+                text = getString(R.string.help_and_guidance)
+                contentDescription = getString(R.string.help_and_guidance_content_description)
+                setAllCaps(false)
+                setOnClickListener {
+                    if (guidanceStore.isFirstUseComplete()) {
+                        showGuidanceMenu()
+                    }
+                }
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        contextualHintContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+            visibility = View.GONE
+        }
+        contextualHintLabel = text(
+            getString(R.string.contextual_hint_disconnected),
+            14f,
+            colors.muted,
+            Typeface.NORMAL,
+        )
+        contextualHintContainer.addView(
+            contextualHintLabel,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        contextualHintContainer.addView(
+            Button(this).apply {
+                text = getString(R.string.dismiss_contextual_hint)
+                setAllCaps(false)
+                contentDescription = getString(R.string.dismiss_contextual_hint)
+                setOnClickListener {
+                    if (guidanceStore.dismissMainContextualHint()) {
+                        refreshContextualHint()
+                    }
+                }
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        content.addView(contextualHintContainer)
+        content.addView(spacer(16))
         content.addView(text(getString(R.string.development_title), 17f, colors.text, Typeface.BOLD))
         content.addView(spacer(4))
         content.addView(text(getString(R.string.development_summary), 15f, colors.muted, Typeface.NORMAL))
@@ -142,6 +212,245 @@ class MessengerClientActivity : Activity() {
 
         root.addView(content)
         return root
+    }
+
+    private fun showStartupGuide(replay: Boolean) {
+        if (replay && !guidanceStore.restartGuide()) {
+            return
+        }
+        guidanceDialog?.takeIf { it.isShowing }?.dismiss()
+
+        val colors = palette()
+        val dialog = Dialog(this)
+        guidanceDialog = dialog
+        dialog.setCancelable(replay)
+        dialog.setCanceledOnTouchOutside(false)
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(24), dp(24), dp(20))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(GlazeClientTokens.SurfaceRadiusDp).toFloat()
+                setColor(colors.surface)
+                setStroke(dp(1), colors.border)
+            }
+        }
+        val title = heading(getString(R.string.startup_guide_title), 22f, colors.text)
+        val progress = text("", 13f, colors.muted, Typeface.NORMAL).apply {
+            setPadding(0, dp(10), 0, 0)
+        }
+        val stepTitle = text("", 18f, colors.text, Typeface.BOLD).apply {
+            setPadding(0, dp(14), 0, 0)
+        }
+        val body = text("", 15f, colors.muted, Typeface.NORMAL).apply {
+            setPadding(0, dp(10), 0, dp(16))
+        }
+        val navigation = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        val backButton = Button(this).apply {
+            text = getString(R.string.guide_back)
+            setAllCaps(false)
+        }
+        val nextButton = Button(this).apply {
+            setAllCaps(false)
+        }
+        val closeButton = Button(this).apply {
+            text = getString(R.string.guide_close)
+            setAllCaps(false)
+            visibility = if (replay) View.VISIBLE else View.GONE
+        }
+
+        navigation.addView(backButton)
+        navigation.addView(nextButton)
+        navigation.addView(closeButton)
+        panel.addView(title)
+        panel.addView(progress)
+        panel.addView(stepTitle)
+        panel.addView(body)
+        panel.addView(navigation)
+
+        fun renderStep() {
+            val step = guidanceStore.currentStep()
+            progress.text = getString(
+                R.string.startup_step_progress,
+                step + 1,
+                MessengerGuidancePolicy.STEP_COUNT,
+            )
+            when (step) {
+                0 -> {
+                    stepTitle.text = getString(R.string.startup_step_disconnected_title)
+                    body.text = getString(R.string.startup_step_disconnected_body)
+                }
+                1 -> {
+                    stepTitle.text = getString(R.string.startup_step_authority_title)
+                    body.text = getString(R.string.startup_step_authority_body)
+                }
+                else -> {
+                    stepTitle.text = getString(R.string.startup_step_privacy_title)
+                    body.text = getString(R.string.startup_step_privacy_body)
+                }
+            }
+            backButton.isEnabled = step > 0
+            nextButton.text = if (MessengerGuidancePolicy.nextStep(step) == null) {
+                getString(R.string.guide_finish)
+            } else {
+                getString(R.string.guide_next)
+            }
+        }
+
+        backButton.setOnClickListener {
+            val previousStep =
+                MessengerGuidancePolicy.previousStep(guidanceStore.currentStep())
+            if (guidanceStore.setCurrentStep(previousStep)) {
+                renderStep()
+            }
+        }
+        nextButton.setOnClickListener {
+            val next = MessengerGuidancePolicy.nextStep(guidanceStore.currentStep())
+            if (next == null) {
+                val persisted = if (!guidanceStore.isFirstUseComplete()) {
+                    guidanceStore.completeFirstUse()
+                } else {
+                    guidanceStore.restartGuide()
+                }
+                if (persisted) {
+                    dialog.dismiss()
+                    refreshContextualHint()
+                }
+            } else if (guidanceStore.setCurrentStep(next)) {
+                renderStep()
+            }
+        }
+        closeButton.setOnClickListener {
+            if (guidanceStore.restartGuide()) {
+                dialog.dismiss()
+            }
+        }
+
+        dialog.setOnDismissListener {
+            if (guidanceDialog === dialog) {
+                guidanceDialog = null
+            }
+        }
+        dialog.setContentView(panel)
+        renderStep()
+        dialog.show()
+        dialog.window?.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+    }
+
+    private fun showGuidanceMenu() {
+        guidanceDialog?.takeIf { it.isShowing }?.dismiss()
+
+        val colors = palette()
+        val dialog = Dialog(this)
+        guidanceDialog = dialog
+        dialog.setCancelable(true)
+        dialog.setCanceledOnTouchOutside(true)
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(24), dp(24), dp(20))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(GlazeClientTokens.SurfaceRadiusDp).toFloat()
+                setColor(colors.surface)
+                setStroke(dp(1), colors.border)
+            }
+        }
+        val title = heading(getString(R.string.guidance_menu_title), 22f, colors.text)
+        val body = text(
+            getString(R.string.guidance_menu_body),
+            15f,
+            colors.muted,
+            Typeface.NORMAL,
+        ).apply {
+            setPadding(0, dp(10), 0, dp(16))
+        }
+        val replayButton = Button(this).apply {
+            text = getString(R.string.replay_startup_guide)
+            setAllCaps(false)
+        }
+        val hintButton = Button(this).apply {
+            setAllCaps(false)
+        }
+        val resetHintsButton = Button(this).apply {
+            text = getString(R.string.reset_dismissed_hints)
+            setAllCaps(false)
+        }
+        val closeButton = Button(this).apply {
+            text = getString(R.string.guide_close)
+            setAllCaps(false)
+        }
+
+        fun renderHintButton() {
+            hintButton.text = if (guidanceStore.areContextualHintsEnabled()) {
+                getString(R.string.turn_contextual_hints_off)
+            } else {
+                getString(R.string.turn_contextual_hints_on)
+            }
+        }
+
+        replayButton.setOnClickListener {
+            showStartupGuide(replay = true)
+        }
+        hintButton.setOnClickListener {
+            val enabled = !guidanceStore.areContextualHintsEnabled()
+            if (guidanceStore.setContextualHintsEnabled(enabled)) {
+                renderHintButton()
+                refreshContextualHint()
+            }
+        }
+        resetHintsButton.visibility =
+            if (guidanceStore.isMainContextualHintDismissed()) View.VISIBLE else View.GONE
+        resetHintsButton.setOnClickListener {
+            if (guidanceStore.resetDismissedContextualHints()) {
+                resetHintsButton.visibility = View.GONE
+                refreshContextualHint()
+            }
+        }
+        closeButton.setOnClickListener { dialog.dismiss() }
+
+        panel.addView(title)
+        panel.addView(body)
+        panel.addView(replayButton)
+        panel.addView(hintButton)
+        panel.addView(resetHintsButton)
+        panel.addView(closeButton)
+
+        dialog.setOnDismissListener {
+            if (guidanceDialog === dialog) {
+                guidanceDialog = null
+            }
+        }
+        dialog.setContentView(panel)
+        renderHintButton()
+        dialog.show()
+        dialog.window?.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+    }
+
+    private fun refreshContextualHint() {
+        if (!::contextualHintContainer.isInitialized || !::guidanceStore.isInitialized) return
+        contextualHintContainer.visibility =
+            if (
+                MessengerGuidancePolicy.shouldShowContextualHint(
+                    firstUseComplete = guidanceStore.isFirstUseComplete(),
+                    hintsEnabled = guidanceStore.areContextualHintsEnabled(),
+                    hintDismissed = guidanceStore.isMainContextualHintDismissed(),
+                )
+            ) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
     }
 
     /**

@@ -195,3 +195,29 @@ func TestMessageResponseTimestampIsStable(t *testing.T) {
 		t.Fatalf("unexpected timestamp: %s", value.CreatedAt)
 	}
 }
+
+func TestSubmitRejectsTrailingJSONValue(t *testing.T) {
+	handler := newTestHandler(t, "user-1")
+	body := `{"message_id":"message-trailing","conversation_id":"conversation-1","sender_id":"user-1","client_nonce":"nonce-trailing","ciphertext":"Y2lwaGVydGV4dA==","encryption":"e2ee","created_at":"2026-09-23T12:00:00Z"}{"plaintext":"must-not-be-ignored"}`
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/data/messages", strings.NewReader(body))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("trailing message JSON status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestReceiptRejectsTrailingJSONValue(t *testing.T) {
+	handler := newTestHandlerWithSeededMessage(t, "user-2")
+	body := `{"conversation_id":"conversation-1","user_id":"user-2","state":"delivered","observed_at":"2026-09-23T12:01:00Z"}{"ignored":true}`
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/data/messages/message-1/receipts", strings.NewReader(body))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("trailing receipt JSON status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
