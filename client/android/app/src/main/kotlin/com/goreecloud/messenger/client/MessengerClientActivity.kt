@@ -122,8 +122,9 @@ class MessengerClientActivity : Activity() {
                 setAllCaps(false)
                 contentDescription = getString(R.string.dismiss_contextual_hint)
                 setOnClickListener {
-                    guidanceStore.dismissMainContextualHint()
-                    refreshContextualHint()
+                    if (guidanceStore.dismissMainContextualHint()) {
+                        refreshContextualHint()
+                    }
                 }
             },
             LinearLayout.LayoutParams(
@@ -215,8 +216,8 @@ class MessengerClientActivity : Activity() {
 
     private fun showStartupGuide(replay: Boolean) {
         guidanceDialog?.takeIf { it.isShowing }?.dismiss()
-        if (replay) {
-            guidanceStore.restartGuide()
+        if (replay && !guidanceStore.restartGuide()) {
+            return
         }
 
         val colors = palette()
@@ -301,29 +302,32 @@ class MessengerClientActivity : Activity() {
         }
 
         backButton.setOnClickListener {
-            guidanceStore.setCurrentStep(
-                MessengerGuidancePolicy.previousStep(guidanceStore.currentStep()),
-            )
-            renderStep()
+            val previousStep =
+                MessengerGuidancePolicy.previousStep(guidanceStore.currentStep())
+            if (guidanceStore.setCurrentStep(previousStep)) {
+                renderStep()
+            }
         }
         nextButton.setOnClickListener {
             val next = MessengerGuidancePolicy.nextStep(guidanceStore.currentStep())
             if (next == null) {
-                if (!guidanceStore.isFirstUseComplete()) {
+                val persisted = if (!guidanceStore.isFirstUseComplete()) {
                     guidanceStore.completeFirstUse()
                 } else {
                     guidanceStore.restartGuide()
                 }
-                dialog.dismiss()
-                refreshContextualHint()
-            } else {
-                guidanceStore.setCurrentStep(next)
+                if (persisted) {
+                    dialog.dismiss()
+                    refreshContextualHint()
+                }
+            } else if (guidanceStore.setCurrentStep(next)) {
                 renderStep()
             }
         }
         closeButton.setOnClickListener {
-            guidanceStore.restartGuide()
-            dialog.dismiss()
+            if (guidanceStore.restartGuide()) {
+                dialog.dismiss()
+            }
         }
 
         dialog.setOnDismissListener {
@@ -397,18 +401,19 @@ class MessengerClientActivity : Activity() {
             showStartupGuide(replay = true)
         }
         hintButton.setOnClickListener {
-            guidanceStore.setContextualHintsEnabled(
-                !guidanceStore.areContextualHintsEnabled(),
-            )
-            renderHintButton()
-            refreshContextualHint()
+            val enabled = !guidanceStore.areContextualHintsEnabled()
+            if (guidanceStore.setContextualHintsEnabled(enabled)) {
+                renderHintButton()
+                refreshContextualHint()
+            }
         }
         resetHintsButton.visibility =
             if (guidanceStore.isMainContextualHintDismissed()) View.VISIBLE else View.GONE
         resetHintsButton.setOnClickListener {
-            guidanceStore.resetDismissedContextualHints()
-            resetHintsButton.visibility = View.GONE
-            refreshContextualHint()
+            if (guidanceStore.resetDismissedContextualHints()) {
+                resetHintsButton.visibility = View.GONE
+                refreshContextualHint()
+            }
         }
         closeButton.setOnClickListener { dialog.dismiss() }
 
