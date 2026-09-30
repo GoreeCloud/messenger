@@ -4,6 +4,7 @@
 
 - Added `docs/PRIVACY.md`, `.editorconfig`, and `.gitignore` to complete the current repository baseline.
 - Updated README, documentation navigation, and Platform Contract evidence to reference the canonical privacy and security records.
+- Added `scripts/validate_repository_structure.py` and CI enforcement so root cleanliness and mandatory repository records fail closed on future changes.
 - The privacy record preserves the current encrypted-envelope, opaque-attachment, short-lived typing, minimized-diagnostics, disconnected-Android, and Development-only acceptance boundaries.
 - No production Identity, Data transport, E2EE, storage, telemetry, release, Production Acceptance, or Stable authority changed.
 
