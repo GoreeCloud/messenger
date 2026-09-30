@@ -85,7 +85,7 @@ platform_systems:
       - internal/api/attachment_http.go
       - internal/service/attachment_service.go
       - docs/development/http-response-hardening.md
-      - docs/security.md
+      - .github/SECURITY.md
     notes: Current Development source has authorization boundaries, opaque ciphertext handling, hardened mutation responses, replay-safe attachment deletion behavior, and minimized diagnostics, but accepted Wardveil Security runtime integration, distributed abuse controls, security-event provenance, and production security acceptance are not established.
   everkeep:
     result: applicable-blocked
@@ -101,7 +101,7 @@ platform_systems:
     version: "1.6.0"
     evidence:
       - README.md
-      - SPECIFICATIONS.md
+      - docs/SPECIFICATIONS.md
       - client/android/README.md
       - client/android/app/src/main/kotlin/com/goreecloud/messenger/client/GlazeClientTokens.kt
       - client/android/app/src/main/kotlin/com/goreecloud/messenger/client/GlazeMessengerPresentationPolicy.kt
@@ -140,7 +140,7 @@ platform_systems:
     version: null
     evidence:
       - README.md
-      - SPECIFICATIONS.md
+      - docs/SPECIFICATIONS.md
       - goreecloud.platform.yaml
     notes: GoreeCloud Policy is applicable to Messenger policy representation, privacy/security/authorization decision coordination, explanation, version/freshness, exception, and evidence boundaries, but no accepted Messenger runtime Policy integration or exact-release policy acceptance exists.
   observability:
@@ -200,11 +200,11 @@ conformance:
   validated_at: null
   evidence:
     - README.md
-    - USER-MANUAL.md
-    - SPECIFICATIONS.md
+    - docs/USER-MANUAL.md
+    - docs/SPECIFICATIONS.md
     - docs/PLATFORM_CONFORMANCE.md
     - docs/architecture.md
-    - docs/security.md
+    - .github/SECURITY.md
     - docs/data-http-api.md
     - docs/runtime-diagnostics.md
     - docs/development/auth-derived-typing-publish.md

@@ -1,5 +1,12 @@
 # GoreeCloud Messenger — Changelogs
 
+## 2026-09-30 — Repository root-cleanliness migration
+
+- Moved canonical human-readable Messenger records from repository root into `docs/` while retaining `README.md`, `LICENSE`, `go.mod`, `goreecloud.platform.yaml`, and machine-required controls at root.
+- Promoted the existing repository security record from `docs/security.md` to `.github/SECURITY.md` and updated Platform Contract evidence paths.
+- Updated README documentation navigation to the canonical `docs/` feature, specification, changelog, branding, benefits, notes, and user-manual records.
+- No server/client runtime, Identity, Data, E2EE, storage, transport, release, Production Acceptance, or Stable authority changed.
+
 **Record type:** Repository change history  
 **Repository:** `GoreeCloud/messenger`  
 **Lifecycle:** Development / nonconformant  
