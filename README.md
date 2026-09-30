@@ -40,6 +40,7 @@ After configuration is accepted, the executable can report a minimized categoric
 - `internal/runtimeconfig/` — fail-closed process configuration derivation and minimized diagnostic projection for currently implemented runtime options
 - `docs/architecture.md` — product architecture and trust boundaries
 - `.github/SECURITY.md` — encryption, security, and vulnerability-reporting constraints
+- `docs/PRIVACY.md` — current Development privacy boundary
 - `docs/data-messaging.md` — Data service authorization, storage, retry, and carrier-separation contract
 - `docs/data-http-api.md` — HTTP API, authentication, authorization, receipt, attachment, runtime composition, and privacy boundary
 - `docs/durable-receipt-store.md` — file durability, runtime selection, and environment-configuration boundaries
@@ -58,6 +59,8 @@ After configuration is accepted, the executable can report a minimized categoric
 - [docs/COMPETITIVE-OBJECTIVES.md](docs/COMPETITIVE-OBJECTIVES.md)
 - [docs/BRANDING.md](docs/BRANDING.md)
 - [docs/NOTES.md](docs/NOTES.md)
+- [docs/PRIVACY.md](docs/PRIVACY.md)
+- [.github/SECURITY.md](.github/SECURITY.md)
 
 ## Client status
 
