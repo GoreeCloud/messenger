@@ -1,5 +1,13 @@
 # GoreeCloud Messenger — Changelogs
 
+## 2026-09-30 — Repository baseline governance completion
+
+- Added `docs/PRIVACY.md`, `.editorconfig`, and `.gitignore` to complete the current repository baseline.
+- Updated README, documentation navigation, and Platform Contract evidence to reference the canonical privacy and security records.
+- The privacy record preserves the current encrypted-envelope, opaque-attachment, short-lived typing, minimized-diagnostics, disconnected-Android, and Development-only acceptance boundaries.
+- No production Identity, Data transport, E2EE, storage, telemetry, release, Production Acceptance, or Stable authority changed.
+
+
 ## 2026-09-30 — Repository root-cleanliness migration
 
 - Moved canonical human-readable Messenger records from repository root into `docs/` while retaining `README.md`, `LICENSE`, `go.mod`, `goreecloud.platform.yaml`, and machine-required controls at root.
