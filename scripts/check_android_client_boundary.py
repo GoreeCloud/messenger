@@ -80,6 +80,15 @@ else:
             errors.append(
                 f"Messenger guidance store is missing bounded preference contract {required!r}",
             )
+    if ".apply()" in guidance_store_text:
+        errors.append(
+            "Messenger guidance store must use synchronous commit() so UI state cannot outrun durable setup state",
+        )
+    if ".commit()" not in guidance_store_text:
+        errors.append(
+            "Messenger guidance store is missing synchronous durable preference commits",
+        )
+
     for forbidden in (
         "message_id",
         "conversation_id",
