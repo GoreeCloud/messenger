@@ -11,40 +11,34 @@ class MessengerGuidanceStore(context: Context) {
     fun currentStep(): Int =
         MessengerGuidancePolicy.normalizeStep(preferences.getInt(KEY_CURRENT_STEP, 0))
 
-    fun setCurrentStep(step: Int) {
+    fun setCurrentStep(step: Int): Boolean =
         preferences.edit()
             .putInt(KEY_CURRENT_STEP, MessengerGuidancePolicy.normalizeStep(step))
-            .apply()
-    }
+            .commit()
 
-    fun completeFirstUse() {
+    fun completeFirstUse(): Boolean =
         preferences.edit()
             .putBoolean(KEY_FIRST_USE_COMPLETE, true)
             .putInt(KEY_CURRENT_STEP, 0)
-            .apply()
-    }
+            .commit()
 
-    fun restartGuide() {
-        preferences.edit().putInt(KEY_CURRENT_STEP, 0).apply()
-    }
+    fun restartGuide(): Boolean =
+        preferences.edit().putInt(KEY_CURRENT_STEP, 0).commit()
 
     fun areContextualHintsEnabled(): Boolean =
         preferences.getBoolean(KEY_CONTEXTUAL_HINTS_ENABLED, true)
 
-    fun setContextualHintsEnabled(enabled: Boolean) {
-        preferences.edit().putBoolean(KEY_CONTEXTUAL_HINTS_ENABLED, enabled).apply()
-    }
+    fun setContextualHintsEnabled(enabled: Boolean): Boolean =
+        preferences.edit().putBoolean(KEY_CONTEXTUAL_HINTS_ENABLED, enabled).commit()
 
     fun isMainContextualHintDismissed(): Boolean =
         preferences.getBoolean(KEY_MAIN_CONTEXTUAL_HINT_DISMISSED, false)
 
-    fun dismissMainContextualHint() {
-        preferences.edit().putBoolean(KEY_MAIN_CONTEXTUAL_HINT_DISMISSED, true).apply()
-    }
+    fun dismissMainContextualHint(): Boolean =
+        preferences.edit().putBoolean(KEY_MAIN_CONTEXTUAL_HINT_DISMISSED, true).commit()
 
-    fun resetDismissedContextualHints() {
-        preferences.edit().remove(KEY_MAIN_CONTEXTUAL_HINT_DISMISSED).apply()
-    }
+    fun resetDismissedContextualHints(): Boolean =
+        preferences.edit().remove(KEY_MAIN_CONTEXTUAL_HINT_DISMISSED).commit()
 
     companion object {
         const val PREFERENCES_NAME = "goreecloud_messenger_guidance"
