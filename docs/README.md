@@ -14,6 +14,7 @@ This directory is the canonical home for Messenger human-readable repository doc
 - `BRANDING.md` — repository-local branding requirements.
 - `USER-MANUAL.md` — current user/developer behavior and limitations.
 - `NOTES.md` — current development and maintenance notes.
+- `PRIVACY.md` — current Development privacy boundary.
 
 ## Supporting records
 
