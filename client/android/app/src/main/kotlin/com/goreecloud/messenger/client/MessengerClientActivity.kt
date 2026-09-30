@@ -215,10 +215,10 @@ class MessengerClientActivity : Activity() {
     }
 
     private fun showStartupGuide(replay: Boolean) {
-        guidanceDialog?.takeIf { it.isShowing }?.dismiss()
         if (replay && !guidanceStore.restartGuide()) {
             return
         }
+        guidanceDialog?.takeIf { it.isShowing }?.dismiss()
 
         val colors = palette()
         val dialog = Dialog(this)
@@ -397,7 +397,6 @@ class MessengerClientActivity : Activity() {
         }
 
         replayButton.setOnClickListener {
-            dialog.dismiss()
             showStartupGuide(replay = true)
         }
         hintButton.setOnClickListener {
