@@ -242,4 +242,37 @@ func TestFileTypingPrivacyPolicyHonorsCanceledContext(t *testing.T) {
 	if err := policy.SetTypingPreferences(ctx, "conversation-a", "user-a", TypingPrivacyPreferences{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected canceled write, got %v", err)
 	}
+
+func TestFileTypingPrivacyPolicyResetSurvivesReopen(t *testing.T) {
+	root := t.TempDir()
+	policy, err := NewFileTypingPrivacyPolicy(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := policy.SetTypingPreferences(
+		ctx,
+		"conversation-a",
+		"user-a",
+		TypingPrivacyPreferences{PublishTyping: true, ObserveTyping: true},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.DeleteTypingPreferences(ctx, "conversation-a", "user-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := NewFileTypingPrivacyPolicy(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := reopened.GetTypingPreferences(ctx, "conversation-a", "user-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PublishTyping || got.ObserveTyping {
+		t.Fatalf("expected reset scope to use configured defaults, got %+v", got)
+	}
+}
+
 }
