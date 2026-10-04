@@ -53,7 +53,7 @@ func TestTypingPreferencesHTTPGetsAndUpdatesAuthenticatedParticipantChoices(t *t
 	if putRecorder.Code != http.StatusOK {
 		t.Fatalf("expected %d, got %d: %s", http.StatusOK, putRecorder.Code, putRecorder.Body.String())
 	}
-	if got := strings.TrimSpace(putRecorder.Body.String()); got != `{"publish_typing":false,"observe_typing":true}` {
+	if got := strings.TrimSpace(putRecorder.Body.String()); got != `{"publish_typing":false,"observe_typing":true,"uses_default":false}` {
 		t.Fatalf("unexpected minimized response: %s", got)
 	}
 
@@ -63,7 +63,7 @@ func TestTypingPreferencesHTTPGetsAndUpdatesAuthenticatedParticipantChoices(t *t
 	if getRecorder.Code != http.StatusOK {
 		t.Fatalf("expected %d, got %d: %s", http.StatusOK, getRecorder.Code, getRecorder.Body.String())
 	}
-	if got := strings.TrimSpace(getRecorder.Body.String()); got != `{"publish_typing":false,"observe_typing":true}` {
+	if got := strings.TrimSpace(getRecorder.Body.String()); got != `{"publish_typing":false,"observe_typing":true,"uses_default":false}` {
 		t.Fatalf("unexpected preference response: %s", got)
 	}
 }
@@ -99,5 +99,45 @@ func TestTypingPreferencesHTTPRejectsClientSuppliedIdentityAndOutsiders(t *testi
 	outsiderMux.ServeHTTP(outsideRecorder, outsideRequest)
 	if outsideRecorder.Code != http.StatusForbidden {
 		t.Fatalf("expected outsider to fail with %d, got %d", http.StatusForbidden, outsideRecorder.Code)
+	}
+
+}
+
+func TestTypingPreferencesHTTPDeleteResetsAuthenticatedParticipantToDefault(t *testing.T) {
+	service, _ := typingPreferenceTestService(t)
+	handler, err := NewTypingPreferencesHTTPHandler(
+		service,
+		typingPreferencesAuthenticator{userID: "user-a"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	put := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/data/conversations/conversation-a/typing/preferences",
+		strings.NewReader(`{"publish_typing":false,"observe_typing":false}`),
+	)
+	putRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(putRecorder, put)
+	if putRecorder.Code != http.StatusOK {
+		t.Fatalf("expected update success, got %d", putRecorder.Code)
+	}
+
+	reset := httptest.NewRequest(
+		http.MethodDelete,
+		"/v1/data/conversations/conversation-a/typing/preferences",
+		nil,
+	)
+	resetRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(resetRecorder, reset)
+	if resetRecorder.Code != http.StatusOK {
+		t.Fatalf("expected reset success, got %d: %s", resetRecorder.Code, resetRecorder.Body.String())
+	}
+	if got := strings.TrimSpace(resetRecorder.Body.String()); got !=
+		`{"publish_typing":true,"observe_typing":true,"uses_default":true}` {
+		t.Fatalf("unexpected reset response: %s", got)
 	}
 }

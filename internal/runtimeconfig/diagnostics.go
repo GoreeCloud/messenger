@@ -52,3 +52,62 @@ func (diagnostic ReceiptPersistenceDiagnostic) LogLine() string {
 		diagnostic.ConfigurationSource,
 	)
 }
+
+type TypingPrivacyPersistenceDiagnostic struct {
+	Mode                string
+	Durability          string
+	DefaultPolicy       string
+	ConfigurationSource string
+}
+
+// TypingPrivacyPersistenceDiagnosticFor reports only categorical operational state.
+// The configured filesystem root is deliberately omitted.
+func TypingPrivacyPersistenceDiagnosticFor(
+	config TypingPrivacyPersistenceConfig,
+) (TypingPrivacyPersistenceDiagnostic, error) {
+	defaultPolicy := "deny"
+	if config.DefaultAllowed {
+		defaultPolicy = "allow"
+	}
+
+	switch config.Mode {
+	case TypingPrivacyPersistenceMemory:
+		if config.Root != "" {
+			return TypingPrivacyPersistenceDiagnostic{}, errors.New(
+				"memory typing privacy persistence must not carry a durable root",
+			)
+		}
+		return TypingPrivacyPersistenceDiagnostic{
+			Mode:                string(TypingPrivacyPersistenceMemory),
+			Durability:          "process-local",
+			DefaultPolicy:       defaultPolicy,
+			ConfigurationSource: runtimeConfigurationSource,
+		}, nil
+	case TypingPrivacyPersistenceFile:
+		if config.Root == "" {
+			return TypingPrivacyPersistenceDiagnostic{}, errors.New(
+				"file typing privacy persistence requires configured durable storage",
+			)
+		}
+		return TypingPrivacyPersistenceDiagnostic{
+			Mode:                string(TypingPrivacyPersistenceFile),
+			Durability:          "single-node-durable",
+			DefaultPolicy:       defaultPolicy,
+			ConfigurationSource: runtimeConfigurationSource,
+		}, nil
+	default:
+		return TypingPrivacyPersistenceDiagnostic{}, fmt.Errorf(
+			"unsupported typing privacy persistence mode",
+		)
+	}
+}
+
+func (diagnostic TypingPrivacyPersistenceDiagnostic) LogLine() string {
+	return fmt.Sprintf(
+		"typing_privacy_persistence=%s typing_privacy_durability=%s typing_privacy_default=%s typing_privacy_config_source=%s",
+		diagnostic.Mode,
+		diagnostic.Durability,
+		diagnostic.DefaultPolicy,
+		diagnostic.ConfigurationSource,
+	)
+}

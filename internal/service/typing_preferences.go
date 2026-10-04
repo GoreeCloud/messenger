@@ -17,12 +17,22 @@ type TypingPrivacyPreferences struct {
 	ObserveTyping bool
 }
 
+type TypingPrivacyPreferenceState struct {
+	Preferences TypingPrivacyPreferences
+	UsesDefault bool
+}
+
 // TypingPrivacyPreferenceStore is the mutable preference boundary used by the
 // Development control surface. Production durability remains a separate Privacy
 // Shield-backed milestone.
 type TypingPrivacyPreferenceStore interface {
 	GetTypingPreferences(context.Context, string, string) (TypingPrivacyPreferences, error)
 	SetTypingPreferences(context.Context, string, string, TypingPrivacyPreferences) error
+	DeleteTypingPreferences(context.Context, string, string) error
+}
+
+type TypingPrivacyPreferenceSourceStore interface {
+	HasTypingPreferences(context.Context, string, string) (bool, error)
 }
 
 // TypingPrivacyPreferenceService authorizes preference reads/writes against
@@ -41,15 +51,40 @@ func NewTypingPrivacyPreferenceService(store TypingPrivacyPreferenceStore, acces
 }
 
 func (s *TypingPrivacyPreferenceService) Get(ctx context.Context, authenticatedUserID, conversationID string) (TypingPrivacyPreferences, error) {
-	conversationID, err := s.authorize(ctx, authenticatedUserID, conversationID)
+	state, err := s.GetState(ctx, authenticatedUserID, conversationID)
 	if err != nil {
 		return TypingPrivacyPreferences{}, err
 	}
+	return state.Preferences, nil
+}
+
+func (s *TypingPrivacyPreferenceService) GetState(
+	ctx context.Context,
+	authenticatedUserID,
+	conversationID string,
+) (TypingPrivacyPreferenceState, error) {
+	conversationID, err := s.authorize(ctx, authenticatedUserID, conversationID)
+	if err != nil {
+		return TypingPrivacyPreferenceState{}, err
+	}
 	preferences, err := s.store.GetTypingPreferences(ctx, conversationID, authenticatedUserID)
 	if err != nil {
-		return TypingPrivacyPreferences{}, fmt.Errorf("get typing privacy preferences: %w", err)
+		return TypingPrivacyPreferenceState{}, fmt.Errorf("get typing privacy preferences: %w", err)
 	}
-	return preferences, nil
+	sourceStore, ok := s.store.(TypingPrivacyPreferenceSourceStore)
+	if !ok {
+		return TypingPrivacyPreferenceState{}, errors.New(
+			"typing privacy preference store does not expose source state",
+		)
+	}
+	explicit, err := sourceStore.HasTypingPreferences(ctx, conversationID, authenticatedUserID)
+	if err != nil {
+		return TypingPrivacyPreferenceState{}, fmt.Errorf("inspect typing privacy preference source: %w", err)
+	}
+	return TypingPrivacyPreferenceState{
+		Preferences: preferences,
+		UsesDefault: !explicit,
+	}, nil
 }
 
 func (s *TypingPrivacyPreferenceService) Update(
@@ -64,6 +99,25 @@ func (s *TypingPrivacyPreferenceService) Update(
 	}
 	if err := s.store.SetTypingPreferences(ctx, conversationID, authenticatedUserID, preferences); err != nil {
 		return TypingPrivacyPreferences{}, fmt.Errorf("set typing privacy preferences: %w", err)
+	}
+	return preferences, nil
+}
+
+func (s *TypingPrivacyPreferenceService) Reset(
+	ctx context.Context,
+	authenticatedUserID,
+	conversationID string,
+) (TypingPrivacyPreferences, error) {
+	conversationID, err := s.authorize(ctx, authenticatedUserID, conversationID)
+	if err != nil {
+		return TypingPrivacyPreferences{}, err
+	}
+	if err := s.store.DeleteTypingPreferences(ctx, conversationID, authenticatedUserID); err != nil {
+		return TypingPrivacyPreferences{}, fmt.Errorf("delete typing privacy preferences: %w", err)
+	}
+	preferences, err := s.store.GetTypingPreferences(ctx, conversationID, authenticatedUserID)
+	if err != nil {
+		return TypingPrivacyPreferences{}, fmt.Errorf("get reset typing privacy preferences: %w", err)
 	}
 	return preferences, nil
 }
@@ -108,6 +162,19 @@ func (p *MemoryTypingPrivacyPolicy) GetTypingPreferences(
 	return TypingPrivacyPreferences{PublishTyping: publish, ObserveTyping: observe}, nil
 }
 
+func (p *MemoryTypingPrivacyPolicy) HasTypingPreferences(
+	_ context.Context,
+	conversationID,
+	userID string,
+) (bool, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	key := typingStateKey(conversationID, userID)
+	_, publishSet := p.publish[key]
+	_, observeSet := p.observe[key]
+	return publishSet || observeSet, nil
+}
+
 func (p *MemoryTypingPrivacyPolicy) SetTypingPreferences(
 	_ context.Context,
 	conversationID,
@@ -119,5 +186,18 @@ func (p *MemoryTypingPrivacyPolicy) SetTypingPreferences(
 	key := typingStateKey(conversationID, userID)
 	p.publish[key] = preferences.PublishTyping
 	p.observe[key] = preferences.ObserveTyping
+	return nil
+}
+
+func (p *MemoryTypingPrivacyPolicy) DeleteTypingPreferences(
+	_ context.Context,
+	conversationID,
+	userID string,
+) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := typingStateKey(conversationID, userID)
+	delete(p.publish, key)
+	delete(p.observe, key)
 	return nil
 }

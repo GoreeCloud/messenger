@@ -31,6 +31,7 @@ func NewTypingPreferencesHTTPHandler(
 func (h *TypingPreferencesHTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/data/conversations/{conversationID}/typing/preferences", h.get)
 	mux.HandleFunc("PUT /v1/data/conversations/{conversationID}/typing/preferences", h.put)
+	mux.HandleFunc("DELETE /v1/data/conversations/{conversationID}/typing/preferences", h.delete)
 }
 
 type typingPreferencesRequest struct {
@@ -41,6 +42,7 @@ type typingPreferencesRequest struct {
 type typingPreferencesResponse struct {
 	PublishTyping bool `json:"publish_typing"`
 	ObserveTyping bool `json:"observe_typing"`
+	UsesDefault   bool `json:"uses_default"`
 }
 
 func (h *TypingPreferencesHTTPHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -48,14 +50,19 @@ func (h *TypingPreferencesHTTPHandler) get(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	preferences, err := h.service.Get(r.Context(), userID, strings.TrimSpace(r.PathValue("conversationID")))
+	state, err := h.service.GetState(
+		r.Context(),
+		userID,
+		strings.TrimSpace(r.PathValue("conversationID")),
+	)
 	if err != nil {
 		writeTypingPreferenceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, typingPreferencesResponse{
-		PublishTyping: preferences.PublishTyping,
-		ObserveTyping: preferences.ObserveTyping,
+		PublishTyping: state.Preferences.PublishTyping,
+		ObserveTyping: state.Preferences.ObserveTyping,
+		UsesDefault:   state.UsesDefault,
 	})
 }
 
@@ -94,6 +101,28 @@ func (h *TypingPreferencesHTTPHandler) put(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, typingPreferencesResponse{
 		PublishTyping: preferences.PublishTyping,
 		ObserveTyping: preferences.ObserveTyping,
+		UsesDefault:   false,
+	})
+}
+
+func (h *TypingPreferencesHTTPHandler) delete(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	preferences, err := h.service.Reset(
+		r.Context(),
+		userID,
+		strings.TrimSpace(r.PathValue("conversationID")),
+	)
+	if err != nil {
+		writeTypingPreferenceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, typingPreferencesResponse{
+		PublishTyping: preferences.PublishTyping,
+		ObserveTyping: preferences.ObserveTyping,
+		UsesDefault:   true,
 	})
 }
 
