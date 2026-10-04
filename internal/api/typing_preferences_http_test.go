@@ -101,6 +101,8 @@ func TestTypingPreferencesHTTPRejectsClientSuppliedIdentityAndOutsiders(t *testi
 		t.Fatalf("expected outsider to fail with %d, got %d", http.StatusForbidden, outsideRecorder.Code)
 	}
 
+}
+
 func TestTypingPreferencesHTTPDeleteResetsAuthenticatedParticipantToDefault(t *testing.T) {
 	service, _ := typingPreferenceTestService(t)
 	handler, err := NewTypingPreferencesHTTPHandler(
@@ -138,6 +140,4 @@ func TestTypingPreferencesHTTPDeleteResetsAuthenticatedParticipantToDefault(t *t
 		`{"publish_typing":true,"observe_typing":true}` {
 		t.Fatalf("unexpected reset response: %s", got)
 	}
-}
-
 }
