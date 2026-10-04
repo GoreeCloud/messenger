@@ -3,10 +3,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -181,8 +183,16 @@ func (p *FileTypingPrivacyPolicy) load() error {
 		return fmt.Errorf("read typing privacy preference store: %w", err)
 	}
 	var document typingPrivacyPreferenceDocument
-	if err := json.Unmarshal(data, &document); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&document); err != nil {
 		return fmt.Errorf("decode typing privacy preference store: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("typing privacy preference store must contain one JSON document")
+		}
+		return fmt.Errorf("decode trailing typing privacy preference data: %w", err)
 	}
 	if document.Version != typingPrivacyPreferenceStoreVersion {
 		return fmt.Errorf("unsupported typing privacy preference store version %d", document.Version)
@@ -304,6 +314,9 @@ func normalizedTypingPreferenceScope(conversationID, userID string) (string, str
 	}
 	if userID == "" {
 		return "", "", errors.New("user id is required")
+	}
+	if strings.ContainsRune(conversationID, '\x00') || strings.ContainsRune(userID, '\x00') {
+		return "", "", errors.New("typing privacy preference identifiers contain an invalid separator")
 	}
 	return conversationID, userID, nil
 }
