@@ -23,6 +23,7 @@ type TypingPrivacyPreferences struct {
 type TypingPrivacyPreferenceStore interface {
 	GetTypingPreferences(context.Context, string, string) (TypingPrivacyPreferences, error)
 	SetTypingPreferences(context.Context, string, string, TypingPrivacyPreferences) error
+	DeleteTypingPreferences(context.Context, string, string) error
 }
 
 // TypingPrivacyPreferenceService authorizes preference reads/writes against
@@ -64,6 +65,25 @@ func (s *TypingPrivacyPreferenceService) Update(
 	}
 	if err := s.store.SetTypingPreferences(ctx, conversationID, authenticatedUserID, preferences); err != nil {
 		return TypingPrivacyPreferences{}, fmt.Errorf("set typing privacy preferences: %w", err)
+	}
+	return preferences, nil
+}
+
+func (s *TypingPrivacyPreferenceService) Reset(
+	ctx context.Context,
+	authenticatedUserID,
+	conversationID string,
+) (TypingPrivacyPreferences, error) {
+	conversationID, err := s.authorize(ctx, authenticatedUserID, conversationID)
+	if err != nil {
+		return TypingPrivacyPreferences{}, err
+	}
+	if err := s.store.DeleteTypingPreferences(ctx, conversationID, authenticatedUserID); err != nil {
+		return TypingPrivacyPreferences{}, fmt.Errorf("delete typing privacy preferences: %w", err)
+	}
+	preferences, err := s.store.GetTypingPreferences(ctx, conversationID, authenticatedUserID)
+	if err != nil {
+		return TypingPrivacyPreferences{}, fmt.Errorf("get reset typing privacy preferences: %w", err)
 	}
 	return preferences, nil
 }
@@ -119,5 +139,18 @@ func (p *MemoryTypingPrivacyPolicy) SetTypingPreferences(
 	key := typingStateKey(conversationID, userID)
 	p.publish[key] = preferences.PublishTyping
 	p.observe[key] = preferences.ObserveTyping
+	return nil
+}
+
+func (p *MemoryTypingPrivacyPolicy) DeleteTypingPreferences(
+	_ context.Context,
+	conversationID,
+	userID string,
+) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := typingStateKey(conversationID, userID)
+	delete(p.publish, key)
+	delete(p.observe, key)
 	return nil
 }
