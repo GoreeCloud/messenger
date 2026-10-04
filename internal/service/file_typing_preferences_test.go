@@ -113,7 +113,10 @@ func TestFileTypingPrivacyPolicyFailsClosedOnCorruptUnsupportedOrUnsafeState(t *
 		t.Fatal("expected unsupported state version to fail closed")
 	}
 
-	if err := os.WriteFile(path, []byte(`{"version":1,"preferences":[]}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":1,"preferences":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewFileTypingPrivacyPolicy(root, true); err == nil {
