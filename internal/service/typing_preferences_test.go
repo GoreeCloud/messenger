@@ -109,4 +109,44 @@ func TestTypingPrivacyPreferencesResetToConfiguredDefault(t *testing.T) {
 	if reset.PublishTyping || reset.ObserveTyping {
 		t.Fatalf("expected configured deny defaults after reset, got %+v", reset)
 	}
+
+func TestTypingPrivacyPreferenceStateReportsDefaultAndOverrideSource(t *testing.T) {
+	access := NewMemoryConversationAccess()
+	if err := access.SetConversation(domain.Conversation{
+		ID:             "conversation-a",
+		Kind:           domain.ConversationDirect,
+		ParticipantIDs: []string{"user-a", "user-b"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewTypingPrivacyPreferenceService(NewMemoryTypingPrivacyPolicy(true), access)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initial, err := service.GetState(context.Background(), "user-a", "conversation-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !initial.UsesDefault {
+		t.Fatal("expected unset scope to report configured default source")
+	}
+
+	if _, err := service.Update(
+		context.Background(),
+		"user-a",
+		"conversation-a",
+		TypingPrivacyPreferences{PublishTyping: true, ObserveTyping: true},
+	); err != nil {
+		t.Fatal(err)
+	}
+	overridden, err := service.GetState(context.Background(), "user-a", "conversation-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overridden.UsesDefault {
+		t.Fatal("expected explicit write to report override source even when values equal defaults")
+	}
+}
+
 }
