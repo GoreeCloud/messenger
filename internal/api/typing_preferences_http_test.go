@@ -47,7 +47,7 @@ func TestTypingPreferencesHTTPGetsAndUpdatesAuthenticatedParticipantChoices(t *t
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
-	put := httptest.NewRequest(http.MethodPut, "/v1/data/conversations/conversation-a/typing/preferences", strings.NewReader(`{"publish_typing":false,"observe_typing":true,"uses_default":false}`))
+	put := httptest.NewRequest(http.MethodPut, "/v1/data/conversations/conversation-a/typing/preferences", strings.NewReader(`{"publish_typing":false,"observe_typing":true}`))
 	putRecorder := httptest.NewRecorder()
 	mux.ServeHTTP(putRecorder, put)
 	if putRecorder.Code != http.StatusOK {
