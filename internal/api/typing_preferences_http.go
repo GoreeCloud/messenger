@@ -31,6 +31,7 @@ func NewTypingPreferencesHTTPHandler(
 func (h *TypingPreferencesHTTPHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/data/conversations/{conversationID}/typing/preferences", h.get)
 	mux.HandleFunc("PUT /v1/data/conversations/{conversationID}/typing/preferences", h.put)
+	mux.HandleFunc("DELETE /v1/data/conversations/{conversationID}/typing/preferences", h.delete)
 }
 
 type typingPreferencesRequest struct {
@@ -86,6 +87,26 @@ func (h *TypingPreferencesHTTPHandler) put(w http.ResponseWriter, r *http.Reques
 			PublishTyping: input.PublishTyping,
 			ObserveTyping: input.ObserveTyping,
 		},
+	)
+	if err != nil {
+		writeTypingPreferenceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, typingPreferencesResponse{
+		PublishTyping: preferences.PublishTyping,
+		ObserveTyping: preferences.ObserveTyping,
+	})
+}
+
+func (h *TypingPreferencesHTTPHandler) delete(w http.ResponseWriter, r *http.Request) {
+	userID, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	preferences, err := h.service.Reset(
+		r.Context(),
+		userID,
+		strings.TrimSpace(r.PathValue("conversationID")),
 	)
 	if err != nil {
 		writeTypingPreferenceError(w, err)
