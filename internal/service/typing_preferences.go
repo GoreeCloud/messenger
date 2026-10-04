@@ -27,9 +27,12 @@ type TypingPrivacyPreferenceState struct {
 // Shield-backed milestone.
 type TypingPrivacyPreferenceStore interface {
 	GetTypingPreferences(context.Context, string, string) (TypingPrivacyPreferences, error)
-	HasTypingPreferences(context.Context, string, string) (bool, error)
 	SetTypingPreferences(context.Context, string, string, TypingPrivacyPreferences) error
 	DeleteTypingPreferences(context.Context, string, string) error
+}
+
+type TypingPrivacyPreferenceSourceStore interface {
+	HasTypingPreferences(context.Context, string, string) (bool, error)
 }
 
 // TypingPrivacyPreferenceService authorizes preference reads/writes against
@@ -68,7 +71,13 @@ func (s *TypingPrivacyPreferenceService) GetState(
 	if err != nil {
 		return TypingPrivacyPreferenceState{}, fmt.Errorf("get typing privacy preferences: %w", err)
 	}
-	explicit, err := s.store.HasTypingPreferences(ctx, conversationID, authenticatedUserID)
+	sourceStore, ok := s.store.(TypingPrivacyPreferenceSourceStore)
+	if !ok {
+		return TypingPrivacyPreferenceState{}, errors.New(
+			"typing privacy preference store does not expose source state",
+		)
+	}
+	explicit, err := sourceStore.HasTypingPreferences(ctx, conversationID, authenticatedUserID)
 	if err != nil {
 		return TypingPrivacyPreferenceState{}, fmt.Errorf("inspect typing privacy preference source: %w", err)
 	}
