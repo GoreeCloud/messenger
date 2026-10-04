@@ -243,6 +243,8 @@ func TestFileTypingPrivacyPolicyHonorsCanceledContext(t *testing.T) {
 		t.Fatalf("expected canceled write, got %v", err)
 	}
 
+}
+
 func TestFileTypingPrivacyPolicyResetSurvivesReopen(t *testing.T) {
 	root := t.TempDir()
 	policy, err := NewFileTypingPrivacyPolicy(root, false)
@@ -273,6 +275,4 @@ func TestFileTypingPrivacyPolicyResetSurvivesReopen(t *testing.T) {
 	if got.PublishTyping || got.ObserveTyping {
 		t.Fatalf("expected reset scope to use configured defaults, got %+v", got)
 	}
-}
-
 }
