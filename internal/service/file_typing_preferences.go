@@ -139,6 +139,41 @@ func (p *FileTypingPrivacyPolicy) SetTypingPreferences(
 	return nil
 }
 
+func (p *FileTypingPrivacyPolicy) DeleteTypingPreferences(
+	ctx context.Context,
+	conversationID,
+	userID string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	conversationID, userID, err := normalizedTypingPreferenceScope(conversationID, userID)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.unavailable != nil {
+		return fmt.Errorf("typing privacy preference store unavailable: %w", p.unavailable)
+	}
+
+	key := typingStateKey(conversationID, userID)
+	if _, exists := p.preferences[key]; !exists {
+		return nil
+	}
+	next := cloneTypingPreferenceMap(p.preferences)
+	delete(next, key)
+	if err := p.persist(next); err != nil {
+		if errors.Is(err, ErrTypingPreferenceDurabilityUnknown) {
+			p.unavailable = err
+		}
+		return err
+	}
+	p.preferences = next
+	return nil
+}
+
 func (p *FileTypingPrivacyPolicy) CanPublishTyping(
 	ctx context.Context,
 	conversationID,
