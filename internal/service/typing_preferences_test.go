@@ -109,6 +109,7 @@ func TestTypingPrivacyPreferencesResetToConfiguredDefault(t *testing.T) {
 	if reset.PublishTyping || reset.ObserveTyping {
 		t.Fatalf("expected configured deny defaults after reset, got %+v", reset)
 	}
+}
 
 func TestTypingPrivacyPreferenceStateReportsDefaultAndOverrideSource(t *testing.T) {
 	access := NewMemoryConversationAccess()
@@ -147,6 +148,4 @@ func TestTypingPrivacyPreferenceStateReportsDefaultAndOverrideSource(t *testing.
 	if overridden.UsesDefault {
 		t.Fatal("expected explicit write to report override source even when values equal defaults")
 	}
-}
-
 }
