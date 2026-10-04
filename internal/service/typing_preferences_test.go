@@ -76,4 +76,37 @@ func TestTypingPrivacyPreferencesRejectConversationOutsider(t *testing.T) {
 	if !errors.Is(err, ErrConversationAccess) {
 		t.Fatalf("expected conversation access error, got %v", err)
 	}
+
+func TestTypingPrivacyPreferencesResetToConfiguredDefault(t *testing.T) {
+	access := NewMemoryConversationAccess()
+	if err := access.SetConversation(domain.Conversation{
+		ID:             "conversation-a",
+		Kind:           domain.ConversationDirect,
+		ParticipantIDs: []string{"user-a", "user-b"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	policy := NewMemoryTypingPrivacyPolicy(false)
+	service, err := NewTypingPrivacyPreferenceService(policy, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.Update(
+		context.Background(),
+		"user-a",
+		"conversation-a",
+		TypingPrivacyPreferences{PublishTyping: true, ObserveTyping: true},
+	); err != nil {
+		t.Fatal(err)
+	}
+	reset, err := service.Reset(context.Background(), "user-a", "conversation-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reset.PublishTyping || reset.ObserveTyping {
+		t.Fatalf("expected configured deny defaults after reset, got %+v", reset)
+	}
+}
+
 }
