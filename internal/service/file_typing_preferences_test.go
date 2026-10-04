@@ -95,6 +95,39 @@ func TestFileTypingPrivacyPolicyDefaultsRemainConstructorControlled(t *testing.T
 	}
 }
 
+func TestFileTypingPrivacyPolicyRejectsUnknownFieldsTrailingDocumentsAndAmbiguousScopes(t *testing.T) {
+	for name, data := range map[string]string{
+		"unknown field": `{"version":1,"preferences":[],"unexpected":true}`,
+		"trailing document": `{"version":1,"preferences":[]} {"version":1,"preferences":[]}`,
+		"separator in conversation": `{"version":1,"preferences":[{"conversation_id":"conversation\\u0000a","user_id":"user-a","publish_typing":true,"observe_typing":true}]}`,
+		"separator in user": `{"version":1,"preferences":[{"conversation_id":"conversation-a","user_id":"user\\u0000a","publish_typing":true,"observe_typing":true}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "typing-privacy-preferences.json")
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewFileTypingPrivacyPolicy(root, true); err == nil {
+				t.Fatal("expected unsafe persisted state to fail closed")
+			}
+		})
+	}
+
+	policy, err := NewFileTypingPrivacyPolicy(t.TempDir(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := policy.SetTypingPreferences(
+		context.Background(),
+		"conversation\x00a",
+		"user-a",
+		TypingPrivacyPreferences{},
+	); err == nil {
+		t.Fatal("expected separator-bearing runtime scope to be rejected")
+	}
+}
+
 func TestFileTypingPrivacyPolicyFailsClosedOnCorruptUnsupportedOrUnsafeState(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "typing-privacy-preferences.json")
