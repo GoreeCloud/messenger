@@ -102,6 +102,28 @@ func (p *FileTypingPrivacyPolicy) GetTypingPreferences(
 	}, nil
 }
 
+func (p *FileTypingPrivacyPolicy) HasTypingPreferences(
+	ctx context.Context,
+	conversationID,
+	userID string,
+) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	conversationID, userID, err := normalizedTypingPreferenceScope(conversationID, userID)
+	if err != nil {
+		return false, err
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.unavailable != nil {
+		return false, fmt.Errorf("typing privacy preference store unavailable: %w", p.unavailable)
+	}
+	_, exists := p.preferences[typingStateKey(conversationID, userID)]
+	return exists, nil
+}
+
 func (p *FileTypingPrivacyPolicy) SetTypingPreferences(
 	ctx context.Context,
 	conversationID,
