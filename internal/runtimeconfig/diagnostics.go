@@ -111,4 +111,3 @@ func (diagnostic TypingPrivacyPersistenceDiagnostic) LogLine() string {
 		diagnostic.ConfigurationSource,
 	)
 }
-
