@@ -122,4 +122,3 @@ func TestTypingPrivacyPersistenceDiagnosticRejectsMalformedConfiguration(t *test
 		}
 	}
 }
-
