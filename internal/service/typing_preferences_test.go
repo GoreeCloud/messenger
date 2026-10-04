@@ -77,6 +77,8 @@ func TestTypingPrivacyPreferencesRejectConversationOutsider(t *testing.T) {
 		t.Fatalf("expected conversation access error, got %v", err)
 	}
 
+}
+
 func TestTypingPrivacyPreferencesResetToConfiguredDefault(t *testing.T) {
 	access := NewMemoryConversationAccess()
 	if err := access.SetConversation(domain.Conversation{
@@ -107,6 +109,4 @@ func TestTypingPrivacyPreferencesResetToConfiguredDefault(t *testing.T) {
 	if reset.PublishTyping || reset.ObserveTyping {
 		t.Fatalf("expected configured deny defaults after reset, got %+v", reset)
 	}
-}
-
 }
