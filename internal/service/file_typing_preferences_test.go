@@ -97,10 +97,10 @@ func TestFileTypingPrivacyPolicyDefaultsRemainConstructorControlled(t *testing.T
 
 func TestFileTypingPrivacyPolicyRejectsUnknownFieldsTrailingDocumentsAndAmbiguousScopes(t *testing.T) {
 	for name, data := range map[string]string{
-		"unknown field": `{"version":1,"preferences":[],"unexpected":true}`,
-		"trailing document": `{"version":1,"preferences":[]} {"version":1,"preferences":[]}`,
+		"unknown field":             `{"version":1,"preferences":[],"unexpected":true}`,
+		"trailing document":         `{"version":1,"preferences":[]} {"version":1,"preferences":[]}`,
 		"separator in conversation": `{"version":1,"preferences":[{"conversation_id":"conversation\u0000a","user_id":"user-a","publish_typing":true,"observe_typing":true}]}`,
-		"separator in user": `{"version":1,"preferences":[{"conversation_id":"conversation-a","user_id":"user\u0000a","publish_typing":true,"observe_typing":true}]}`,
+		"separator in user":         `{"version":1,"preferences":[{"conversation_id":"conversation-a","user_id":"user\u0000a","publish_typing":true,"observe_typing":true}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
