@@ -8,9 +8,9 @@ GoreeCloud Messenger is a privacy-first unified messaging project intended to su
 
 - Responsive, keyboard-accessible unified inbox shell with protocol filters, search, clear transport/security indicators, a light/dark appearance, and GC UI-inspired floating/rounded navigation.
 - **Local notes:** Compose and view notes in browser-tab memory. Notes disappear on page refresh; **no persistence or encryption is claimed**.
-- **DATA (limited):** Connect to a Matrix homeserver by HTTPS origin and an existing access token, inspect joined rooms, read recent plain-text events, and send text to **unencrypted** Matrix rooms **only after explicit, per-session consent**. Token and timelines stay in tab memory. Room details and operation errors are visible. Sending uses unique reusable transaction IDs for manual retries.
+- **DATA (limited):** Connect to a Matrix homeserver by HTTPS origin and an existing access token, inspect joined rooms, read recent plain-text events, and send text to **unencrypted** Matrix rooms **only after explicit, per-session consent**. Token and timelines stay in tab memory. Room details and operation errors are visible. Sending uses unique reusable transaction IDs for manual retries; room encryption is rechecked before each read and send. A non-atomic state-check/send race remains, so this connector is not safe for confidential messages.
 - **Security gates:** Encrypted/unknown-status rooms fail closed. Unsupported RCS/MMS/SMS adapters cannot send. Default protocol routing requires a verified encrypted transport; ciphertext-to-plaintext downgrades require confirmation in transport policy (and are not implemented as automatic UI sends).
-- Node-built-in tests for routing, encryption-state gating, TLS and consent, plus GitHub Actions checks.
+- Node-built-in tests for routing, encryption-state gating, TLS, session cancellation and explicit consent, plus GitHub Actions checks.
 
 **Critical limitation:** This version **does not provide secure DATA/E2EE**. It does not encrypt or decrypt Matrix room events, verify devices/keys, or store/restore secrets. The limited Matrix plaintext mode is for testing only. Never enter highly sensitive content into unencrypted Matrix rooms. Matrix's server can access plaintext messages; use a disposable test account. This web version **cannot** register as Android's default SMS application and **does not** implement SMS, MMS or carrier RCS.
 
@@ -41,7 +41,7 @@ To test DATA, choose **Connect DATA**, enter the **origin** of a Matrix homeserv
 | Android/iOS/Windows/Linux/macOS apps | **Not implemented** |
 | Attachments, calls, multi-device, groups admin, backup, AI | **Not implemented** |
 
-See [architecture and gating](docs/ARCHITECTURE.md) and [security posture](docs/SECURITY.md).
+See [architecture and gating](docs/ARCHITECTURE.md), [security posture](docs/SECURITY.md), and [the secure DATA acceptance plan](docs/DATA-E2EE-GATE.md).
 
 ## Design and integration
 

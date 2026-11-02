@@ -42,7 +42,7 @@
           <button type="button" class="filter" data-filter="SMS" aria-pressed="false">SMS</button>
         </div>
         <div class="sidebar-caption">YOUR CONVERSATIONS</div>
-        <div id="conversationList" class="conversation-list" role="list" aria-label="Conversations"></div>
+        <div id="conversationList" class="conversation-list" role="group" aria-label="Conversations"></div>
         <div class="sidebar-bottom"><span class="status-dot"></span><span id="sidebarStatus">Local notes ready · no session</span></div>
       </aside>
       <main class="chat-panel floating" aria-label="Conversation">
@@ -55,7 +55,7 @@
           <span class="security-symbol" aria-hidden="true">ⓘ</span>
           <span id="securityText">Local-only notes · not encrypted or backed up</span>
         </div>
-        <section id="timeline" class="timeline" aria-label="Message history" aria-live="polite"></section>
+        <section id="timeline" class="timeline" aria-label="Message history"></section>
         <div class="compose-wrap">
           <div class="compose-policy"><label for="transportSelect">Send using</label>
             <select id="transportSelect" aria-label="Select protocol">
@@ -85,7 +85,7 @@
         <div class="privacy-note"><strong>Privacy comes first</strong><p>Encrypted rooms remain locked here until proper Matrix cryptography, device verification and key recovery are implemented. No silent fallback.</p></div>
       </aside>
     </div>
-    <section class="connection-panel floating" id="connection" hidden aria-labelledby="connectionTitle">
+    <section class="connection-panel floating" id="connection" hidden role="dialog" aria-modal="false" aria-labelledby="connectionTitle">
       <div class="connection-head"><div><p class="eyebrow">SELF-HOSTED DATA</p><h2 id="connectionTitle">Connect a Matrix account</h2></div><button type="button" id="closeConnection" class="icon-button" aria-label="Close connection panel">✕</button></div>
       <p>Developer-only plaintext Matrix connector. Access tokens are held in tab memory, not saved. Encrypted rooms cannot be viewed or sent to. Use a test account and HTTPS homeserver.</p>
       <form id="connectForm">
