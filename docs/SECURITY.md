@@ -9,7 +9,7 @@
 - Unknown or encrypted Matrix rooms are **blocked** by the plaintext connector. A 403/timeout is **not** interpreted as proof of plaintext. Room encryption is rechecked just before message reads/sends, though the state check and send are not atomic.
 - Plaintext DATA transmission requires a per-session checkbox. Every message and protocol state explicitly says not end-to-end encrypted. No automatic carrier downgrade.
 - Text is inserted into DOM using `textContent`, never interpolated as HTML. Request sizes and history depth are bounded.
-- Matrix `txnId` is retained for manual retries, reducing duplicate sends when a request's response is lost. Closing a session aborts in-flight client requests; already submitted server-side writes cannot be revoked.
+- An in-memory outbox coalesces simultaneous sends with the same transaction ID, blocks changed-content reuse, and preserves the ID for manual retries. This does not guarantee cross-session exactly-once delivery. Closing a session aborts in-flight client requests; already submitted server-side writes cannot be revoked.
 - Tests cover basic routing and transport authorization behavior.
 
 ## Known gaps and risks

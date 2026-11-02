@@ -1,9 +1,10 @@
 import { planRoute, createCapabilities, formatSecurity } from "../src/protocols.mjs";
 import { MatrixPlaintextSession } from "../src/matrix.mjs";
+import { InMemoryOutbox } from "../src/outbox.mjs";
 
 const $ = id => document.getElementById(id);
 const state = {
-  session: null, userId: "", rooms: [], notes: [], messages: new Map(),
+  session: null, outbox: null, userId: "", rooms: [], notes: [], messages: new Map(),
   selected: "notes", filter: "ALL", query: "", loading: false,
   allowPlaintext: false, failures: new Map()
 };
@@ -95,6 +96,7 @@ function renderTimeline() {
     meta.append(node("span", "", message.protocol),
       node("span", "", securityFor(room)),
       node("time", "", dateLabel(message.timestamp)));
+    if (message.delivery) meta.append(node("span", "", message.delivery));
     if (message.error) {
       const retry = node("button", "retry", "Retry");
       retry.type = "button";
@@ -169,20 +171,25 @@ async function send() {
     policy: {preferred:["DATA"],requireEncryption:false,allowFallback:false} });
   if (route.status !== "ready" || els.transport.value !== route.protocol) return announce("No authorized transport. Nothing sent.");
   const message = { id: crypto.randomUUID(), text, timestamp: Date.now(),
-    protocol: "DATA", encrypted: false, own: true, error: false };
+    protocol: "DATA", encrypted: false, own: true, error: false, delivery: "Queued" };
   const messages = state.messages.get(room.id) || [];
   state.messages.set(room.id, [...messages, message]); els.message.value = "";
   await transmit(room, message);
 }
 async function transmit(room, message) {
-  state.loading = true; render();
+  const outbox = state.outbox;
+  if (!outbox) return announce("No DATA session is active. Nothing was sent.");
+  state.loading = true; message.delivery = "Sending"; render();
   try {
-    await state.session.sendPlaintext(room, message.text, message.id,
-      { allowPlaintext: state.allowPlaintext });
-    message.error = false;
+    await outbox.dispatch({
+      room, text: message.text, txnId: message.id, allowPlaintext: state.allowPlaintext
+    });
+    if (state.outbox !== outbox) return;
+    message.error = false; message.delivery = "Accepted by homeserver";
     announce("Matrix homeserver accepted message · not E2EE");
   } catch (error) {
-    message.error = true;
+    if (state.outbox !== outbox) return;
+    message.error = true; message.delivery = "Delivery unconfirmed";
     if (/encryption changed|cannot be verified/.test(error.message)) {
       room.encrypted = "unknown";
     }
@@ -195,6 +202,8 @@ async function retryMessage(id) {
   await transmit(room, message);
 }
 function disconnect() {
+  state.outbox?.close();
+  state.outbox = null;
   state.session?.close();
   state.session = null; state.rooms = []; state.userId = ""; state.selected = "notes";
   state.messages.clear(); state.allowPlaintext = false; state.loading = false;
@@ -216,8 +225,10 @@ async function connect(event) {
     const ids = await next.listRooms();
     const rooms = [];
     for (const id of ids) rooms.push(await next.inspectRoom(id));
+    state.outbox?.close();
     state.session?.close();
-    state.session = next; state.userId = userId; state.rooms = rooms; state.messages.clear();
+    state.session = next; state.outbox = new InMemoryOutbox({ transport: next });
+    state.userId = userId; state.rooms = rooms; state.messages.clear();
     state.selected = rooms.length ? rooms[0].id : "notes";
     state.allowPlaintext = false; $("plaintextConsent").checked = false;
     $("tokenInput").value = "";

@@ -6,7 +6,7 @@
   "description": "GoreeCloud Messenger web foundation and protocol policy",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check src/protocols.mjs && node --check src/matrix.mjs && node --check web/app.mjs",
+    "check": "node --check src/protocols.mjs && node --check src/matrix.mjs && node --check src/outbox.mjs && node --check web/app.mjs",
     "serve": "python3 -m http.server 4173 --directory ."
   },
   "engines": {

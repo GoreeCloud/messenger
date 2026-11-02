@@ -8,6 +8,8 @@
 
 `src/matrix.mjs`: minimal Matrix Client-Server adapter for **testing plaintext**. The connector uses HTTPS origin validation, bearer headers, request timeout, no redirects, no HTTP caching, bounded reads, session-only secrets, fresh encryption-state inspection before plaintext reads/sends, cancellation on disconnect, and an idempotency transaction ID per message. This client-server security-state check cannot be atomic with a subsequent message PUT. It intentionally refuses encrypted or unknown-security rooms.
 
+`src/outbox.mjs`: bounded in-memory outbox that coalesces concurrent duplicate submits, keeps stable Matrix transaction identifiers for uncertain retries, requires consent on every dispatch and cannot persist plaintext to disk. It is not an offline durable queue and does not guarantee exactly-once across devices, process restarts or homeserver TTLs.
+
 ## Planned production architecture (not implemented)
 
 1. **Domain:** immutable message ID, protocol/security state, delivery receipts, conversation membership, attachment descriptors, idempotency and audit-safe diagnostics.
