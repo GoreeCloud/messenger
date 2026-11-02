@@ -1,0 +1,30 @@
+# DATA E2EE integration — security design gate
+
+**Status: engineering specification only. Not implemented.** No developer-preview message should be described as end-to-end encrypted. This document accompanies the intentionally plaintext-only test adapter.
+
+## Upstream SDK selection
+
+- For the web product, review the maintained `matrix-js-sdk` (version 45.0.0 available October 2026) and its Rust WASM crypto bindings. Official source: https://github.com/matrix-org/matrix-js-sdk
+- The SDK documents `initRustCrypto()`, `getCrypto()`, secret storage bootstrap and cross-signing. Verify exact methods against pinned version before use.
+- For native Android/iOS, evaluate `matrix-rust-sdk` platform bindings instead of building separate incompatible cryptographic implementations. Official source: https://github.com/matrix-org/matrix-rust-sdk
+- Do **not** implement Olm/Megolm cryptography or invent key material yourself. Review third-party licenses, dependency maintenance and supply chain before integration.
+
+## Security acceptance gates (block production)
+
+1. **Account identity:** Authenticate using approved flows; bind account, homeserver and Matrix device ID; never treat an arbitrary access token as proof that recipient keys are verified.
+2. **Secure crypto store:** Initialize Rust crypto with one exclusive client per IndexedDB store. A repeated client instance with the same store may corrupt keys; guard against multiple tabs and expose safe recovery behavior.
+3. **Verified encryption:** Only call a room E2EE after crypto init succeeds, room encryption state is current, and actual send/decrypt paths are covered by integration tests. A room state event or TLS alone does not prove it.
+4. **Verification UX:** Support SAS/QR validation, device lists and warnings for unverified or newly changed devices. Never silently accept altered recipient identities.
+5. **Cross-signing and recovery:** Set up secret storage, cross-signing, recovery-key export, key backup, and tested restore. Separate authenticated account recovery from cryptographic key recovery.
+6. **Downgrade protection:** Carry per-conversation `requireEncryption` policy into all transports; never enable fallback to carrier SMS/MMS on an E2EE-required conversation.
+7. **Media:** Encrypt files client-side with authenticated metadata handling, integrity verification, and retention controls.
+8. **Quality:** Test real encrypted room roundtrips across multiple users/devices and self-hosted homeservers, key changes, offline sends, logout/revocation, restoration, duplicate retry and malicious/compromised endpoints.
+9. **Deployment:** Add CSP, authenticated media handling, security-reviewed bundling, vulnerability scans and privacy-preserving telemetry before any production browser release.
+
+## Interim plaintext adapter hardening
+
+`src/matrix.mjs` is restricted to development-only unencrypted rooms, with explicit session consent, HTTPS and no redirect, no HTTP cache, bounded history, no persistence, security-state reinspection before reads and sends, and `AbortController` cancellation on disconnect.
+
+**Residual race:** Matrix Client-Server REST has no atomic encryption-state check-and-plaintext-send primitive. A room could be encrypted after the last check but before a PUT. Therefore the plaintext adapter is **not safe for sensitive or production messaging** even after the reinspection fix. A verified end-to-end crypto client is necessary.
+
+Track acceptance in https://github.com/GoreeCloud/messenger/issues/2.

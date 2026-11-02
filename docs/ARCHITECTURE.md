@@ -6,7 +6,7 @@
 
 `src/protocols.mjs`: pure, platform-neutral delivery policy. Every candidate needs verified capability. Default secure mode requires independently verified encryption; fallback requires explicit policy and ciphertext-to-plaintext confirmation.
 
-`src/matrix.mjs`: minimal Matrix Client-Server adapter for **testing plaintext**. The connector uses HTTPS origin validation, bearer headers, request timeout, no redirects, bounded reads, session-only secrets, encryption-state inspection, and an idempotency transaction ID per message. It intentionally refuses encrypted or unknown-security rooms.
+`src/matrix.mjs`: minimal Matrix Client-Server adapter for **testing plaintext**. The connector uses HTTPS origin validation, bearer headers, request timeout, no redirects, no HTTP caching, bounded reads, session-only secrets, fresh encryption-state inspection before plaintext reads/sends, cancellation on disconnect, and an idempotency transaction ID per message. This client-server security-state check cannot be atomic with a subsequent message PUT. It intentionally refuses encrypted or unknown-security rooms.
 
 ## Planned production architecture (not implemented)
 
@@ -38,3 +38,5 @@
 | SMS | Adapter unavailable | No |
 
 A Matrix homeserver's state response is not itself sufficient proof of trustworthy encryption or verified recipients. Production security needs cryptographic session validation, key verification, account recovery and adversarial testing.
+
+**E2EE integration specification:** [DATA-E2EE-GATE.md](DATA-E2EE-GATE.md) documents required upstream SDK, verification, recovery and release acceptance gates.

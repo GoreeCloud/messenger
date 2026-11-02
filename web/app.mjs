@@ -22,6 +22,8 @@ function node(tag, className, content) {
 function announce(message) {
   els.toast.textContent = message;
   els.toast.classList.add("visible");
+  clearTimeout(announce.timeout);
+  announce.timeout = setTimeout(() => els.toast.classList.remove("visible"), 5000);
 }
 function selectedRoom() { return state.rooms.find(room => room.id === state.selected); }
 function dateLabel(ts) {
@@ -57,7 +59,6 @@ function renderList() {
   for (const item of list) {
     const button = node("button", "conversation" + (state.selected === item.id ? " selected" : ""));
     button.type = "button";
-    button.setAttribute("role", "listitem");
     button.setAttribute("aria-current", String(state.selected === item.id));
     const avatar = node("span", "conversation-avatar", item.icon);
     avatar.setAttribute("aria-hidden", "true");
@@ -125,7 +126,7 @@ function renderComposer() {
 function render() {
   const room = selectedRoom();
   $("chatTitle").textContent = room?.name || "Personal notes";
-  $("chatSubtitle").textContent = room ? "Matrix DATA · " + room.id : "Private workspace on this tab";
+  $("chatSubtitle").textContent = room ? "Matrix DATA · " + room.id : "Temporary tab notes · not encrypted";
   $("chatAvatar").textContent = room ? "#" : "✎";
   $("securityText").textContent = securityFor(room);
   $("securityStrip").classList.toggle("warning", Boolean(room));
@@ -137,18 +138,22 @@ function render() {
 }
 async function loadMessages() {
   const room = selectedRoom();
-  if (!state.session || !room || room.encrypted !== "plaintext") return;
+  const session = state.session;
+  if (!session || !room || room.encrypted !== "plaintext") return;
   state.loading = true; renderComposer();
   try {
-    const messages = await state.session.readMessages(room);
-    if (state.selected === room.id) state.messages.set(room.id, messages);
-    announce("Updated Matrix messages");
+    const messages = await session.readMessages(room, state.userId);
+    // A disconnect or account switch must never populate the next session.
+    if (state.session === session && state.selected === room.id) {
+      state.messages.set(room.id, messages);
+    }
+    if (state.session === session) announce("Updated Matrix messages");
   } catch (error) { announce(error.message); }
   finally { state.loading = false; render(); }
 }
 async function send() {
   const text = els.message.value;
-  if (!text.trim() || state.loading) return;
+  if (!text.trim() || state.loading || els.send.disabled) return;
   const room = selectedRoom();
   if (!room) {
     if (els.transport.value !== "LOCAL") return announce("Notes are local only. No carrier gateway is configured.");
@@ -178,18 +183,21 @@ async function transmit(room, message) {
     announce("Matrix homeserver accepted message · not E2EE");
   } catch (error) {
     message.error = true;
+    if (/encryption changed|cannot be verified/.test(error.message)) {
+      room.encrypted = "unknown";
+    }
     announce(error.message + " · Retry uses the same transaction ID");
   } finally { state.loading = false; render(); }
 }
 async function retryMessage(id) {
   const room = selectedRoom(); const message = (state.messages.get(room?.id) || []).find(m => m.id === id);
-  if (!room || !message || !message.error || !state.allowPlaintext || state.loading) return;
+  if (!state.session || !room || room.encrypted !== "plaintext" || !message || !message.error || !state.allowPlaintext || state.loading) return;
   await transmit(room, message);
 }
 function disconnect() {
   state.session?.close();
   state.session = null; state.rooms = []; state.userId = ""; state.selected = "notes";
-  state.messages.clear(); state.allowPlaintext = false;
+  state.messages.clear(); state.allowPlaintext = false; state.loading = false;
   $("plaintextConsent").checked = false; $("tokenInput").value = "";
   $("connectionStatus").textContent = "Disconnected. Credentials were not persisted.";
   announce("DATA disconnected"); render();
@@ -221,6 +229,7 @@ async function connect(event) {
     $("connectionStatus").textContent = error.message;
     announce("Connection failed: " + error.message);
   } finally {
+    $("tokenInput").value = "";
     state.loading = false; $("connectButton").disabled = false; render();
     if (state.session && selectedRoom()?.encrypted === "plaintext") void loadMessages();
   }
@@ -238,7 +247,14 @@ els.transport.addEventListener("change", renderComposer);
 $("connectToggle").addEventListener("click", () => { els.connection.hidden = false; $("homeserverInput").focus(); });
 $("railConnection").addEventListener("click", e => { e.preventDefault(); els.connection.hidden = false; $("homeserverInput").focus(); });
 $("railPrivacy").addEventListener("click", e => { e.preventDefault(); $("privacy").scrollIntoView({behavior:"smooth"}); });
-$("closeConnection").addEventListener("click", () => { els.connection.hidden = true; });
+$("closeConnection").addEventListener("click", () => { els.connection.hidden = true; $("connectToggle").focus(); });
+els.connection.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    els.connection.hidden = true;
+    $("connectToggle").focus();
+  }
+});
 $("connectForm").addEventListener("submit", e => void connect(e));
 $("disconnectButton").addEventListener("click", disconnect);
 $("plaintextConsent").addEventListener("change", e => {
