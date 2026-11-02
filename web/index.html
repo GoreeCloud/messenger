@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="GoreeCloud Messenger — one interface, four messaging protocols, transparent security.">
+  <title>GoreeCloud Messenger · Development preview</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar floating">
+      <div class="brand-mark" aria-hidden="true">G</div>
+      <div class="brand">
+        <strong>GoreeCloud <span>Messenger</span></strong>
+        <small>One app. Four protocols. Complete control.</small>
+      </div>
+      <span class="preview-tag">Development preview</span>
+      <div class="top-actions">
+        <button id="themeToggle" class="icon-button" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">◐</button>
+        <button id="connectToggle" class="primary small" type="button">Connect DATA</button>
+      </div>
+    </header>
+    <div class="workspace">
+      <nav class="rail floating" aria-label="Primary navigation">
+        <span class="rail-monogram" aria-hidden="true">✦</span>
+        <a class="rail-link selected" href="#inbox" aria-current="page" title="Inbox"><span aria-hidden="true">▣</span><span>Inbox</span></a>
+        <a class="rail-link" href="#connection" id="railConnection" title="Connection"><span aria-hidden="true">◈</span><span>DATA</span></a>
+        <a class="rail-link" href="#privacy" id="railPrivacy" title="Privacy"><span aria-hidden="true">◇</span><span>Privacy</span></a>
+        <span class="rail-spacer"></span>
+        <span class="rail-foot" title="Carrier integration is not present">α</span>
+      </nav>
+      <aside class="inbox-panel floating" id="inbox">
+        <div class="inbox-heading"><div><p class="eyebrow">MESSAGES</p><h1>Inbox</h1></div><span id="roomCount" class="counter">0</span></div>
+        <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Search conversations</span><input id="searchInput" type="search" placeholder="Search conversations" autocomplete="off"></label>
+        <div class="filter-row" role="group" aria-label="Filter by transport">
+          <button type="button" class="filter active" data-filter="ALL" aria-pressed="true">All</button>
+          <button type="button" class="filter" data-filter="DATA" aria-pressed="false">DATA</button>
+          <button type="button" class="filter" data-filter="RCS" aria-pressed="false">RCS</button>
+          <button type="button" class="filter" data-filter="MMS" aria-pressed="false">MMS</button>
+          <button type="button" class="filter" data-filter="SMS" aria-pressed="false">SMS</button>
+        </div>
+        <div class="sidebar-caption">YOUR CONVERSATIONS</div>
+        <div id="conversationList" class="conversation-list" role="list" aria-label="Conversations"></div>
+        <div class="sidebar-bottom"><span class="status-dot"></span><span id="sidebarStatus">Local notes ready · no session</span></div>
+      </aside>
+      <main class="chat-panel floating" aria-label="Conversation">
+        <div class="chat-top">
+          <div class="avatar" id="chatAvatar" aria-hidden="true">✎</div>
+          <div class="chat-title"><h2 id="chatTitle">Personal notes</h2><p id="chatSubtitle">Private workspace on this tab</p></div>
+          <button class="ghost small" id="refreshButton" type="button" title="Refresh current Matrix conversation">Refresh</button>
+        </div>
+        <div class="security-strip" id="securityStrip" role="status">
+          <span class="security-symbol" aria-hidden="true">ⓘ</span>
+          <span id="securityText">Local-only notes · not encrypted or backed up</span>
+        </div>
+        <section id="timeline" class="timeline" aria-label="Message history" aria-live="polite"></section>
+        <div class="compose-wrap">
+          <div class="compose-policy"><label for="transportSelect">Send using</label>
+            <select id="transportSelect" aria-label="Select protocol">
+              <option value="LOCAL">LOCAL · notes</option>
+              <option value="DATA">DATA · Matrix</option>
+              <option value="RCS">RCS · unavailable</option>
+              <option value="MMS">MMS · unavailable</option>
+              <option value="SMS">SMS · unavailable</option>
+            </select>
+            <span id="routeStatus">Local device only</span>
+          </div>
+          <form id="composeForm" class="composer">
+            <label class="sr-only" for="messageInput">Message</label>
+            <textarea id="messageInput" placeholder="Write a note…" rows="2" maxlength="16000"></textarea>
+            <button id="sendButton" type="submit" class="send-button" title="Send message or save note" aria-label="Send message or save note">➤</button>
+          </form>
+          <p class="compose-foot" id="composeHelp">Notes are kept in memory and disappear when this page closes. Enter to send; Shift+Enter for a new line.</p>
+        </div>
+      </main>
+      <aside class="detail-panel floating" id="privacy" aria-label="Transport availability">
+        <p class="eyebrow">PROTOCOL CENTER</p><h2>Four modes.<br>One inbox.</h2>
+        <p class="detail-intro">Capabilities are shown as they exist in this client, never as promises.</p>
+        <div class="protocol-card"><div class="protocol-symbol data">D</div><div><strong>DATA</strong><p>Matrix rooms · explicit connection</p></div><span class="protocol-state partial">Limited</span></div>
+        <div class="protocol-card"><div class="protocol-symbol rcs">R</div><div><strong>RCS</strong><p>Carrier/provider integration required</p></div><span class="protocol-state">Planned</span></div>
+        <div class="protocol-card"><div class="protocol-symbol mms">M</div><div><strong>MMS</strong><p>Android default-SMS role required</p></div><span class="protocol-state">Planned</span></div>
+        <div class="protocol-card"><div class="protocol-symbol sms">S</div><div><strong>SMS</strong><p>Android cellular permissions required</p></div><span class="protocol-state">Planned</span></div>
+        <div class="privacy-note"><strong>Privacy comes first</strong><p>Encrypted rooms remain locked here until proper Matrix cryptography, device verification and key recovery are implemented. No silent fallback.</p></div>
+      </aside>
+    </div>
+    <section class="connection-panel floating" id="connection" hidden aria-labelledby="connectionTitle">
+      <div class="connection-head"><div><p class="eyebrow">SELF-HOSTED DATA</p><h2 id="connectionTitle">Connect a Matrix account</h2></div><button type="button" id="closeConnection" class="icon-button" aria-label="Close connection panel">✕</button></div>
+      <p>Developer-only plaintext Matrix connector. Access tokens are held in tab memory, not saved. Encrypted rooms cannot be viewed or sent to. Use a test account and HTTPS homeserver.</p>
+      <form id="connectForm">
+        <label>Homeserver origin <input id="homeserverInput" type="url" autocomplete="url" placeholder="https://matrix.example.org" required></label>
+        <label>Matrix access token <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Session access token" required></label>
+        <div class="connection-actions"><button type="submit" id="connectButton" class="primary">Connect</button><button type="button" id="disconnectButton" class="ghost">Disconnect</button></div>
+      </form>
+      <label class="consent"><input id="plaintextConsent" type="checkbox"><span><strong>Allow plaintext DATA sends for this session only</strong><small>Messages in unencrypted Matrix rooms are readable by the homeserver. This is NOT end-to-end encrypted. Disabled by default.</small></span></label>
+      <p class="connection-status" id="connectionStatus" role="status">Not connected</p>
+    </section>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
