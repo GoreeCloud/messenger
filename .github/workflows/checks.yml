@@ -1,0 +1,18 @@
+name: Messenger foundation checks
+on:
+  push:
+    branches: [main, feat/unified-messaging-foundation]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run check
+      - run: npm test
