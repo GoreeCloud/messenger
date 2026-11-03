@@ -21,3 +21,7 @@ The fixture also uses a same-origin restrictive CSP with `wasm-unsafe-eval`, per
 ### Wrong-key tamper/recovery safety check
 
 In the reopened document, the fixture deliberately passes a different synthetic 32-byte crypto-store key to the real Rust SDK through `SecureDataBootstrap`. The bootstrap must fail closed, the previously initialized test database must remain present, the exclusive Web Lock must be released, and the original key must still reopen the same persistent store afterward. This test does not prove a user-facing key custody/recovery flow or protect a real account; incorrect-key and missing-key conditions must remain blocked in production until recovery is independently verified.
+
+## Real HTTP login-cancellation regression
+
+The isolated Chromium fixture now delays a synthetic `whoami` response, confirms the request has reached the local HTTP server, aborts `SecureDataBootstrap.open({signal})`, and verifies the pending login **never opens a Rust crypto database** and leaves the exclusive Web Lock releasable. The real Matrix SDK, loopback HTTP request, and GoreeCloud bootstrap are used together. No real credentials, user interaction, production state or encrypted messages are involved. The bootstrap still awaits a pending SDK operation before releasing its lock; this test does not assert instantaneous cancellation of an SDK HTTP request.
