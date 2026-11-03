@@ -384,6 +384,114 @@ try {
   assert.equal(fixture.credentialInUrl, false, 'Credentials must not be exposed in request URLs');
   assert.equal(fixture.putAttempts.length, 2);
   console.log('Matrix browser integration PASSED: consent, XSS, retry, sync, encrypted lock, cancellation');
+
+  // Real browser integration of the *unused* crypto-store Web Locks guard.
+  // This uses no Matrix identity, crypto keys, or external data.
+  const primitives = await evaluate(`(async () => {
+    const { acquireCryptoStoreLease } =
+      await import('/src/crypto-store-lease.mjs');
+    if (!isSecureContext || !navigator.locks || !indexedDB) {
+      return { secure: false };
+    }
+    const first = await acquireCryptoStoreLease();
+    try {
+      let refused = false;
+      try {
+        const duplicate = await acquireCryptoStoreLease();
+        await duplicate.release();
+      } catch (error) {
+        refused = error.message.includes('Another Messenger tab');
+      }
+      const held = await navigator.locks.query();
+      const exclusiveHeld = held.held.some(lock =>
+        lock.name === 'goreecloud-messenger:matrix-rust-crypto-store' &&
+        lock.mode === 'exclusive');
+      return { secure: true, refused, exclusiveHeld };
+    } finally {
+      await first.release();
+    }
+  })()`);
+  assert.deepEqual(primitives,
+    { secure: true, refused: true, exclusiveHeld: true },
+    'Web Locks must reject concurrent crypto-store owners in real Chromium');
+  const lockReleased = await evaluate(`(async () => {
+    const { acquireCryptoStoreLease } =
+      await import('/src/crypto-store-lease.mjs');
+    const another = await acquireCryptoStoreLease();
+    try {
+      const held = await navigator.locks.query();
+      return held.held.some(lock =>
+        lock.name === 'goreecloud-messenger:matrix-rust-crypto-store');
+    } finally {
+      await another.release();
+    }
+  })()`);
+  assert.equal(lockReleased, true, 'Released crypto store must be reusable');
+
+  // A disposable IndexedDB database proves that Chromium storage can persist
+  // across a navigation. This does NOT test Matrix Rust's crypto database.
+  const dbWritten = await evaluate(`(async () => {
+    const request = indexedDB.open('goreecloud-ci-crypto-primitives', 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('synthetic');
+    };
+    const db = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      const txn = db.transaction('synthetic', 'readwrite');
+      txn.objectStore('synthetic').put('synthetic-only', 'lifecycle');
+      await new Promise((resolve, reject) => {
+        txn.oncomplete = resolve;
+        txn.onerror = () => reject(txn.error);
+        txn.onabort = () => reject(txn.error);
+      });
+      return true;
+    } finally {
+      db.close();
+    }
+  })()`);
+  assert.equal(dbWritten, true);
+  await call('Page.reload', { ignoreCache: true });
+  await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
+  const dbReloaded = await evaluate(`(async () => {
+    const request = indexedDB.open('goreecloud-ci-crypto-primitives', 1);
+    const db = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      const txn = db.transaction('synthetic', 'readonly');
+      const finished = new Promise((resolve, reject) => {
+        txn.oncomplete = resolve;
+        txn.onerror = () => reject(txn.error);
+        txn.onabort = () => reject(txn.error);
+      });
+      const record = txn.objectStore('synthetic').get('lifecycle');
+      const value = await new Promise((resolve, reject) => {
+        record.onsuccess = () => resolve(record.result);
+        record.onerror = () => reject(record.error);
+      });
+      // db.close() does not abort ongoing transactions. Wait for completion
+      // before requesting deletion to avoid an IndexedDB onblocked race.
+      await finished;
+      return value;
+    } finally {
+      db.close();
+      const deletion = indexedDB.deleteDatabase('goreecloud-ci-crypto-primitives');
+      await new Promise((resolve, reject) => {
+        deletion.onsuccess = resolve;
+        deletion.onerror = () => reject(deletion.error);
+        // onblocked only notifies about a closing connection; success may
+        // still follow. The CDP command timeout bounds this test.
+      });
+    }
+  })()`);
+  assert.equal(dbReloaded, 'synthetic-only',
+    'A same-origin IndexedDB value must persist across navigation');
+  console.log('Chromium crypto primitives PASSED: exclusive Web Locks, release, disposable IndexedDB persistence');
+
   await call('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-color-scheme', value: 'dark' }]
   });

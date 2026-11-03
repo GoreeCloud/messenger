@@ -69,3 +69,7 @@ A separate test-only Node 22 workspace under `integration/matrix-sdk-smoke/` ins
 ## Read-only room membership identity checks
 
 The SDK bootstrap's future E2EE room inspector now fetches the joined member list from the SDK rather than trusting caller-supplied recipients, and requires the authenticated self identity plus every reported peer to have expected verification status. Malformed or incomplete membership is blocked. This cannot establish real device-key trust or a secure encrypted conversation, and every send is still disabled.
+
+## Browser crypto-store prerequisites (synthetic-only)
+
+Headless Chromium now tests real same-origin Web Locks exclusivity and reuse plus a disposable IndexedDB write/read after reload. Tests contain no accounts, messages, tokens, crypto secrets or third-party network calls. Browser primitives are necessary, not sufficient, for Matrix Rust crypto-store security; no actual Rust crypto database is opened by this test and E2EE remains inactive.
