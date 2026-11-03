@@ -61,7 +61,12 @@ async function until(expression, expected = true) {
     catch { /* document may be navigating */ }
     await sleep(100);
   }
-  throw new Error('Browser condition not met: ' + expression);
+  const diagnostics = await evaluate(`({ url: location.href,
+    ready: document.readyState, title: document.title,
+    buttons: document.querySelectorAll('#conversationList button').length,
+    body: document.body?.innerText?.slice(0, 250) })`).catch(error => ({ error: error.message }));
+  throw new Error('Browser condition not met: ' + expression +
+    '; diagnostics=' + JSON.stringify(diagnostics));
 }
 async function capture(name) {
   mkdirSync(artifacts, { recursive: true });
@@ -97,6 +102,9 @@ try {
   socket.onmessage = event => {
     let msg;
     try { msg = JSON.parse(event.data); } catch { return; }
+    if (msg.method === 'Runtime.exceptionThrown') {
+      console.error('CHROME RUNTIME ERROR:', JSON.stringify(msg.params?.exceptionDetails));
+    }
     if (!pending.has(msg.id)) return;
     const p = pending.get(msg.id); pending.delete(msg.id); clearTimeout(p.timer);
     if (msg.error) p.reject(new Error(JSON.stringify(msg.error)));
