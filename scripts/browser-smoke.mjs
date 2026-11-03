@@ -21,9 +21,93 @@ const chrome = process.env.CHROME_BIN || (existsSync('/usr/bin/google-chrome')
   ? '/usr/bin/google-chrome' : existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : 'chromium');
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
+
+/**
+ * Hermetic Matrix Client-Server fixture: synthetic identities only.
+ * Accessible only through the ephemeral loopback HTTP server below.
+ * It is NOT a Matrix homeserver implementation or a production backend.
+ */
+const fixture = {
+  expectedToken: 'synthetic-test-token', credentialInUrl: false,
+  rooms: ['!plain:localhost', '!sealed:localhost'],
+  plainEncrypted: false, failNextPut: false, slowWhoami: false,
+  putAttempts: [], events: [{
+    type: 'm.room.message', event_id: '$inbound', sender: '@peer:localhost',
+    content: { msgtype: 'm.text', body: 'Synthetic inbound <img src=x onerror=alert(1)>' },
+    origin_server_ts: 1000
+  }]
+};
+function matrixResponse(res, status, body = {}) {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  res.end(JSON.stringify(body));
+}
+async function matrixFixtureRequest(req, res, path) {
+  if (req.url.includes(fixture.expectedToken)) fixture.credentialInUrl = true;
+  if (req.headers.authorization !== 'Bearer ' + fixture.expectedToken) {
+    return matrixResponse(res, 401, { errcode: 'M_UNKNOWN_TOKEN' });
+  }
+  if (path === 'account/whoami' && req.method === 'GET') {
+    if (fixture.slowWhoami) await sleep(350);
+    return matrixResponse(res, 200, { user_id: '@preview:localhost' });
+  }
+  if (path === 'joined_rooms' && req.method === 'GET') {
+    return matrixResponse(res, 200, { joined_rooms: fixture.rooms });
+  }
+  const plain = path.startsWith('rooms/!plain:localhost/');
+  const sealed = path.startsWith('rooms/!sealed:localhost/');
+  if ((plain || sealed) && path.endsWith('/state/m.room.encryption') && req.method === 'GET') {
+    if (sealed || fixture.plainEncrypted) {
+      return matrixResponse(res, 200, { algorithm: 'm.megolm.v1.aes-sha2' });
+    }
+    return matrixResponse(res, 404, { errcode: 'M_NOT_FOUND' });
+  }
+  if ((plain || sealed) && path.endsWith('/state/m.room.name') && req.method === 'GET') {
+    return matrixResponse(res, 200, {
+      name: plain ? 'Unencrypted test room' : 'Encrypted test room'
+    });
+  }
+  if (plain && path.startsWith('rooms/!plain:localhost/messages') && req.method === 'GET') {
+    return matrixResponse(res, 200, { chunk: [...fixture.events] });
+  }
+  if (plain && path.includes('/send/m.room.message/') && req.method === 'PUT') {
+    let raw = '';
+    for await (const chunk of req) {
+      raw += chunk.toString('utf8');
+      if (raw.length > 20000) return matrixResponse(res, 413);
+    }
+    let body;
+    try { body = JSON.parse(raw); }
+    catch { return matrixResponse(res, 400); }
+    const txn = path.split('/').at(-1);
+    fixture.putAttempts.push({ txn, text: body.body });
+    if (fixture.failNextPut) {
+      fixture.failNextPut = false;
+      return matrixResponse(res, 503, { errcode: 'M_UNAVAILABLE' });
+    }
+    if (fixture.plainEncrypted) {
+      return matrixResponse(res, 403, { errcode: 'M_FORBIDDEN' });
+    }
+    const eventId = '$accepted-' + txn;
+    if (!fixture.events.some(e => e.event_id === eventId)) {
+      fixture.events.unshift({
+        type: 'm.room.message', event_id: eventId,
+        sender: '@preview:localhost', content: { msgtype: 'm.text', body: body.body },
+        origin_server_ts: Date.now()
+      });
+    }
+    return matrixResponse(res, 200, { event_id: eventId });
+  }
+  return matrixResponse(res, 404, { errcode: 'M_NOT_FOUND' });
+}
+
 const server = createServer(async (req, res) => {
   try {
     const name = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    if (name.startsWith('/_matrix/client/v3/')) {
+      await matrixFixtureRequest(req, res, name.slice('/_matrix/client/v3/'.length));
+      return;
+    }
     const path = resolve(ROOT, '.' + (name.endsWith('/') ? name + 'index.html' : name));
     if (!path.startsWith(ROOT + sep) || !Object.hasOwn(mime, extname(path))) {
       res.writeHead(403); res.end(); return;
@@ -155,6 +239,108 @@ try {
   await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
   assert.ok(!(await evaluate("document.getElementById('timeline').textContent")).includes(
     'Synthetic test note'), 'Notes must be volatile after refresh');
+
+  // Real UI → loopback Matrix REST integration with synthetic data.
+  // No external homeserver and no real credentials/carrier network calls.
+  const homeserver = 'http://127.0.0.1:' + port;
+  await evaluate(`(() => {
+    document.getElementById('connectToggle').click();
+    const origin = document.getElementById('homeserverInput');
+    origin.value = ${JSON.stringify(homeserver)};
+    document.getElementById('tokenInput').value = 'synthetic-test-token';
+    document.getElementById('connectForm').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+  })()`);
+  await until("document.getElementById('sidebarStatus').textContent.includes('Connected to Matrix')");
+  await until("document.getElementById('timeline').textContent.includes('Synthetic inbound')");
+  assert.equal(await evaluate("document.querySelector('#timeline img') === null"), true,
+    'Matrix message bodies must be treated as text, never HTML');
+  assert.equal(await evaluate("document.getElementById('tokenInput').value"), '',
+    'Token input must be cleared after authentication');
+  assert.equal(await evaluate("document.getElementById('sendButton').disabled"), true,
+    'Plaintext sending must be blocked until per-session consent');
+
+  await evaluate(`(() => {
+    const checkbox = document.getElementById('plaintextConsent');
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  assert.equal(await evaluate("document.getElementById('sendButton').disabled"), false);
+  fixture.failNextPut = true;
+  await evaluate(`(() => {
+    document.getElementById('messageInput').value = 'Synthetic uncertain DATA send';
+    document.getElementById('composeForm').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+  })()`);
+  await until("document.querySelector('#timeline button.retry') !== null");
+  assert.equal(fixture.putAttempts.length, 1, 'Only one send attempt before retry');
+  const originalTxn = fixture.putAttempts[0].txn;
+  await evaluate("document.querySelector('#timeline button.retry').click()");
+  await until("document.getElementById('timeline').textContent.includes('Accepted by homeserver')");
+  assert.equal(fixture.putAttempts.length, 2);
+  assert.equal(fixture.putAttempts[1].txn, originalTxn,
+    'Retry must use original Matrix transaction ID');
+  await evaluate("document.getElementById('refreshButton').click()");
+  await until("document.getElementById('timeline').textContent.includes('Confirmed by sync')");
+  assert.equal(fixture.putAttempts.length, 2, 'Read/refresh must not duplicate sends');
+
+  await evaluate(`(() => {
+    const sealed = [...document.querySelectorAll('#conversationList button')]
+      .find(b => b.textContent.includes('Encrypted test room'));
+    if (!sealed) throw new Error('Encrypted room not listed');
+    sealed.click();
+  })()`);
+  assert.equal(await evaluate("document.getElementById('sendButton').disabled"), true,
+    'Encrypted Matrix rooms must remain locked');
+  assert.match(await evaluate("document.getElementById('timeline').textContent"),
+    /locked/);
+  await evaluate(`(() => {
+    [...document.querySelectorAll('#conversationList button')]
+      .find(b => b.textContent.includes('Unencrypted test room')).click();
+  })()`);
+  await until("document.getElementById('sendButton').disabled === false");
+  fixture.plainEncrypted = true;
+  await evaluate(`(() => {
+    document.getElementById('messageInput').value = 'Must not send after encryption';
+    document.getElementById('composeForm').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+  })()`);
+  await until("document.getElementById('securityText').textContent.includes('unknown')");
+  assert.equal(fixture.putAttempts.length, 2,
+    'Encrypting a room before a subsequent send must block the PUT');
+
+  await evaluate(`(() => {
+    document.getElementById('connectToggle').click();
+    document.getElementById('disconnectButton').click();
+  })()`);
+  assert.equal(await evaluate("document.getElementById('tokenInput').value"), '');
+  assert.equal(await evaluate("document.getElementById('sidebarStatus').textContent.includes('no DATA session')"), true);
+  assert.equal(await evaluate("document.getElementById('plaintextConsent').checked"), false);
+
+  // Invalid authentication must not silently recover a previous session.
+  await evaluate(`(() => {
+    document.getElementById('homeserverInput').value = ${JSON.stringify(homeserver)};
+    document.getElementById('tokenInput').value = 'invalid-token';
+    document.getElementById('connectForm').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+  })()`);
+  await until("document.getElementById('connectionStatus').textContent.includes('401')");
+  assert.equal(await evaluate("document.getElementById('sidebarStatus').textContent.includes('no DATA session')"), true);
+
+  // A delayed successful whoami must not reconnect after a user disconnects.
+  fixture.slowWhoami = true;
+  await evaluate(`(() => {
+    document.getElementById('tokenInput').value = 'synthetic-test-token';
+    document.getElementById('connectForm').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+    document.getElementById('disconnectButton').click();
+  })()`);
+  await sleep(500);
+  assert.equal(await evaluate("document.getElementById('sidebarStatus').textContent.includes('no DATA session')"), true,
+    'Cancelled authentication must not restore a Matrix session');
+  assert.equal(fixture.credentialInUrl, false, 'Credentials must not be exposed in request URLs');
+  assert.equal(fixture.putAttempts.length, 2);
+  console.log('Matrix browser integration PASSED: consent, XSS, retry, sync, encrypted lock, cancellation');
   await call('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-color-scheme', value: 'dark' }]
   });
