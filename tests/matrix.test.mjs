@@ -132,3 +132,21 @@ test("closing rejects new requests and aborts in-flight requests", async () => {
   assert.equal(fired, true);
   assert.equal(capturedSignal.aborted, true);
 });
+
+test("fetch implementations requiring a global receiver work as in browsers", async () => {
+  let calls = 0;
+  async function receiverSensitiveFetch(url, options) {
+    assert.equal(this, globalThis, "fetch must not receive MatrixPlaintextSession as this");
+    assert.ok(url.includes("/_matrix/client/v3/account/whoami"));
+    assert.equal(options.headers.Authorization, "Bearer fixture");
+    calls++;
+    return fake(200, { user_id: "@preview:localhost" });
+  }
+  const session = new MatrixPlaintextSession({
+    homeserver: "http://127.0.0.1:8008", accessToken: "fixture",
+    fetchImpl: receiverSensitiveFetch
+  });
+  assert.equal(await session.whoami(), "@preview:localhost");
+  assert.equal(calls, 1);
+  session.close();
+});
