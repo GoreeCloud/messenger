@@ -47,7 +47,7 @@ test("rejects non-secure contexts, absent IndexedDB and invalid identity before 
   for (const fields of [
     { secureContext: false }, { indexedDB: null },
     { userId: "not-a-Matrix-ID" }, { deviceId: "" },
-    { accessToken: "bad\\nBearer" }, { homeserver: "http://matrix.example.test" }
+    { accessToken: "bad\nBearer" }, { homeserver: "http://matrix.example.test" }
   ]) {
     await assert.rejects(SecureDataBootstrap.open({ ...goodIdentity, ...env, ...fields }));
   }
