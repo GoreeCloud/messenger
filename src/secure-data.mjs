@@ -23,7 +23,8 @@ export class SecureDataGateError extends Error {
 const fail = (code, reason) => new SecureDataGateError(code, reason);
 function identity(value, prefix, label) {
   if (typeof value !== "string" || !value.startsWith(prefix) ||
-      value.length < 4 || value.length > 255 || /[\s\u0000-\u001f\u007f]/u.test(value)) {
+      value.length < 4 || value.length > 255 || /[\s\u0000-\u001f\u007f]/u.test(value) ||
+      value.indexOf(":") < 2 || value.endsWith(":")) {
     throw fail("IDENTITY_INVALID", "A valid Matrix " + label + " is required");
   }
   return value;
@@ -210,7 +211,12 @@ export class SecureDataBootstrap {
   async close() {
     if (this.#closed) return;
     this.#closed = true;
-    try { await this.#client.stopClient(); }
-    finally { await this.#lease.release(); }
+    const client = this.#client;
+    const lease = this.#lease;
+    this.#client = null;
+    this.#crypto = null;
+    this.#lease = null;
+    try { await client.stopClient(); }
+    finally { await lease.release(); }
   }
 }
