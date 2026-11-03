@@ -43,9 +43,3 @@ The developer-preview UI now associates every connection attempt and room timeli
 ## Native Android preview safety
 
 The native Android developer preview delegates text composition using `ACTION_SENDTO` to the device's existing SMS app. It requests no SMS permissions, reads no SMS databases, registers no SMS/MMS delivery receivers, has no network APIs or credential storage, and does not request to become the default SMS app. A recipient validator rejects URI-injection syntax and invalid numbers. The downstream messaging app controls transport selection, sending and storage; GoreeCloud does not attest to its security. No on-device permission, privacy or delivery audit has been performed.
-
-## Browser preview CSP and framing boundary
-
-The web preview now declares a restrictive **HTML meta Content-Security-Policy**: self-hosted JS/CSS/fonts, HTTPS Matrix origins (and explicit local development loopback), blocked objects/frames/workers and disabled form navigation; plus a no-referrer policy. The policy has no `unsafe-inline` or `unsafe-eval`. This constrains script injection but does **not** ensure a compromised homeserver, browser extension, or already-executed script is trustworthy.
-
-**Required production server controls still absent:** set CSP as an HTTP response header, `frame-ancestors` in the response header, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, appropriate HTTPS/HSTS, cache-control for authenticated pages, and real E2EE. `frame-ancestors` and some navigation restrictions cannot be enforced by a meta tag. Static preview is not production safe.
