@@ -51,7 +51,7 @@ See [architecture and gating](docs/ARCHITECTURE.md), [security posture](docs/SEC
 
 ## Design and integration
 
-The project must ultimately consume the verified [GoreeCloud UI](https://github.com/GoreeCloud/gc-ui) foundations and comply with its shape/surface and accessibility requirements. The current web styles reflect the documented **6/12/18/26/36** shape vocabulary, floating navigation, and semantic colors, but **do not yet import the stable GC UI Foundations package**. Until an approved, verified integration is added, design-system compliance is **partial**.
+The project must ultimately consume the verified [GoreeCloud UI](https://github.com/GoreeCloud/gc-ui) foundations and comply with its shape/surface and accessibility requirements. The web preview now vendors the **exact semantic CSS token export** from the verified first-party [GC UI Foundations 1.0.1](https://github.com/GoreeCloud/gc-ui/releases/tag/foundations-v1.0.1) source tag and maps application colors, shapes and minimum control sizes to those tokens. The [source provenance](docs/GC-UI-TOKEN-PROVENANCE.md) and Apache-2.0 license are included. This does **not** install or support the GC UI JavaScript theme controller or component system, and design-system accessibility/visual acceptance remains **partial**.
 
 Matrix is an independent, open messaging protocol. GoreeCloud Messenger is a first-party application, not a rebranding of the Matrix SDK or its reference clients. Upstream clients and cryptographic libraries must retain attribution and be security-reviewed before incorporation.
 

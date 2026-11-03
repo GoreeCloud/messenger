@@ -237,8 +237,12 @@ try {
     panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     return open && panel.hidden;
   })()`), true, 'Connection panel opens and Escape closes it');
+  const initialGCMode = await evaluate("document.documentElement.dataset.gcMode");
+  assert.ok(initialGCMode === 'light' || initialGCMode === 'dark');
   await evaluate("document.getElementById('themeToggle').click()");
-  assert.equal(await evaluate("document.documentElement.dataset.theme"), 'light');
+  const nextGCMode = await evaluate("document.documentElement.dataset.gcMode");
+  assert.notEqual(nextGCMode, initialGCMode, 'Theme toggle must change visible color mode');
+  assert.equal(await evaluate("document.documentElement.dataset.theme"), nextGCMode);
 
   await call('Page.reload', { ignoreCache: true });
   await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
@@ -386,6 +390,8 @@ try {
   await call('Page.reload', { ignoreCache: true });
   await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
   assert.equal(await evaluate("getComputedStyle(document.documentElement).colorScheme"), 'dark');
+  assert.equal(await evaluate("document.documentElement.dataset.gcMode"), 'dark');
+  assert.match(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--gc-v1-color-primary')"), /#/);
   await capture('desktop-dark');
   await call('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-color-scheme', value: 'light' }]
@@ -393,6 +399,7 @@ try {
   await call('Page.reload', { ignoreCache: true });
   await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
   assert.equal(await evaluate("getComputedStyle(document.documentElement).colorScheme"), 'light');
+  assert.equal(await evaluate("document.documentElement.dataset.gcMode"), 'light');
   await capture('desktop-light');
 
   await call('Emulation.setEmulatedMedia', {
@@ -418,6 +425,16 @@ try {
   await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
   assert.equal(await evaluate("getComputedStyle(document.documentElement).colorScheme"), 'light');
   await capture('mobile-light');
+  await call('Emulation.setEmulatedMedia', {
+    features: [
+      { name: 'prefers-color-scheme', value: 'dark' },
+      { name: 'prefers-contrast', value: 'more' }
+    ]
+  });
+  await call('Page.reload', { ignoreCache: true });
+  await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
+  assert.equal(await evaluate("document.documentElement.dataset.gcContrast"), 'high');
+  assert.equal(await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--gc-v1-color-canvas').trim().toLowerCase()"), '#000000');
   console.log('Browser smoke PASSED: notes, routing, filter, keyboard, theme, reload, 390px layout');
 } finally {
   if (socket) socket.close();

@@ -1,34 +1,37 @@
-/* Provisional app-level GC UI surface mapping; shape vocabulary 6/12/18/26/36.
-   No claim of official Foundations package integration until package is verified. */
+/* GoreeCloud Messenger — application aliases for the verified GC UI Foundations
+   1.0.1 CSS token contract (tagged source). Official token CSS is loaded first.
+   Component patterns and browser theme runtime have not been imported. */
 :root {
-  color-scheme: dark;
-  --bg: #0d1421; --surface: #151f2f; --surface-2: #1b293d;
-  --surface-3: #25354a; --border: #34435b; --text: #f2f6fc;
-  --muted: #a7b5c9; --accent: #75cfdf; --accent-contrast: #0c2432;
-  --secondary: #9eaff9; --danger: #ffbb9c; --focus: #91e6f5;
-  --r-sm: 6px; --r-field: 12px; --r-button: 18px; --r-surface: 26px; --r-sheet: 36px;
+  --bg: var(--gc-v1-color-canvas);
+  --surface: var(--gc-v1-color-surface);
+  --surface-2: var(--gc-v1-color-surface-raised);
+  --surface-3: var(--gc-v1-color-surface-tonal);
+  --border: var(--gc-v1-color-outline);
+  --text: var(--gc-v1-color-on-surface);
+  --muted: var(--gc-v1-color-on-surface-muted);
+  --accent: var(--gc-v1-color-primary);
+  --accent-contrast: var(--gc-v1-color-on-primary);
+  --secondary: var(--gc-v1-color-secondary);
+  --danger: var(--gc-v1-color-danger);
+  --focus: var(--gc-v1-color-focus-ring);
+  --r-sm: var(--gc-v1-foundation-radius-xs);
+  --r-field: var(--gc-v1-foundation-radius-sm);
+  --r-button: var(--gc-v1-foundation-radius-md);
+  --r-surface: var(--gc-v1-foundation-radius-lg);
+  --r-sheet: var(--gc-v1-foundation-radius-xl);
   --shadow: 0 12px 34px rgba(0,0,0,.19);
 }
-:root[data-theme="light"] {
+:root[data-gc-mode="light"] {
   color-scheme: light;
-  --bg: #edf2f8; --surface: #fff; --surface-2: #f3f6fb;
-  --surface-3: #e8f0f7; --border: #cdd8e6; --text: #132337;
-  --muted: #50627c; --accent: #006b7f; --accent-contrast: #fff;
-  --secondary: #586ab1; --danger: #8e311b; --focus: #015774;
   --shadow: 0 12px 34px rgba(47,65,85,.10);
 }
-@media(prefers-color-scheme:light) {
-  :root:not([data-theme]) {
-    color-scheme:light; --bg:#edf2f8; --surface:#fff; --surface-2:#f3f6fb;
-    --surface-3:#e8f0f7; --border:#cdd8e6; --text:#132337;
-    --muted:#50627c; --accent:#006b7f; --accent-contrast:#fff;
-    --secondary:#586ab1; --danger:#8e311b; --focus:#015774;
-    --shadow:0 12px 34px rgba(47,65,85,.10);
-  }
+:root[data-gc-mode="dark"] {
+  color-scheme: dark;
+  --shadow: 0 12px 34px rgba(0,0,0,.28);
 }
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; }
-body { margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+body { margin:0; font-family:var(--gc-v1-foundation-typography-family-ui,system-ui,sans-serif);
   background:radial-gradient(ellipse at 85% 0%,color-mix(in srgb,var(--secondary) 9%,transparent),transparent 40%),var(--bg);
   color:var(--text); font-size:14px; }
 button,input,textarea,select { font:inherit; }
@@ -54,12 +57,12 @@ a { color:inherit; }
   color:var(--muted);font-size:11px;margin-left:10px; }
 .top-actions { margin-left:auto;display:flex;gap:10px;align-items:center; }
 .primary,.ghost,.icon-button { border-radius:var(--r-button);border:1px solid var(--border);padding:11px 15px;
-  background:var(--surface-2);color:var(--text);font-weight:650;min-height:42px; }
+  background:var(--surface-2);color:var(--text);font-weight:650;min-height:var(--gc-v1-foundation-target-comfortable,44px); }
 .primary { background:var(--accent);color:var(--accent-contrast);border-color:transparent; }
 .primary:hover { filter:brightness(1.08); }
 .ghost:hover,.icon-button:hover { background:var(--surface-3); }
-.small { font-size:12px;padding:9px 14px;min-height:38px; }
-.icon-button { min-width:42px;padding:8px;font-size:19px; }
+.small { font-size:12px;padding:9px 14px;min-height:var(--gc-v1-foundation-target-comfortable,44px); }
+.icon-button { min-width:var(--gc-v1-foundation-target-comfortable,44px);padding:8px;font-size:19px; }
 .workspace { flex:1;display:grid;grid-template-columns:82px minmax(245px,320px) minmax(340px,1fr) 290px;
   gap:14px;min-height:calc(100dvh - 126px);max-height:calc(100dvh - 126px); }
 .rail { display:flex;flex-direction:column;align-items:center;padding:20px 9px;gap:15px; }
