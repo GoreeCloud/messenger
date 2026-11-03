@@ -57,3 +57,7 @@ The actual Chromium UI is tested against an isolated synthetic loopback homeserv
 ## Conservative DATA labels and room revocation
 
 An encrypted Matrix room's state is now labeled **encryption reported**, not verified end-to-end encryption; this preview does not validate cryptographic identities. If a timeline fetch detects a changed encryption state or receives a 401/403 response, the room's cached plaintext eligibility becomes unknown, its timeline is hidden, and future sends are blocked pending a new connection and security inspection. A synthetic Chromium integration test checks these behaviors. This does not establish genuine E2EE support or eliminate the non-atomic plaintext security-state race.
+
+## Read-only secure DATA bootstrap checkpoint
+
+An isolated, unused `SecureDataBootstrap` guards future Matrix Rust SDK initialization with secure browser context, persistent IndexedDB, an exclusive Web Locks store lease and a matching `whoami()` account/device identity. It activates the SDK's global unverified-device blacklist and can inspect reported recovery/identity conditions, but exposes no messaging methods and **always returns canSend:false**. The existing plaintext UI does not instantiate or load this module. These gates and synthetic tests are not a deployed cryptographic implementation or proof of verified E2EE. See [secure DATA bootstrap scope](SECURE-DATA-SDK-BOOTSTRAP.md).

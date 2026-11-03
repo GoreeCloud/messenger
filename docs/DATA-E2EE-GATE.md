@@ -1,6 +1,6 @@
 # DATA E2EE integration — security design gate
 
-**Status: engineering specification only. Not implemented.** No developer-preview message should be described as end-to-end encrypted. This document accompanies the intentionally plaintext-only test adapter.
+**Status: release security specification; read-only initialization gate implemented, but encrypted messaging remains not implemented.** No developer-preview message should be described as end-to-end encrypted. This document accompanies the intentionally plaintext-only test adapter.
 
 ## Upstream SDK selection
 
@@ -36,3 +36,7 @@ The current policy module requires a **cryptoVerified** signal in addition to av
 ### Future browser crypto-store exclusivity
 
 `src/crypto-store-lease.mjs` provides an explicit, cooperating-tab Web Locks lease contract. A future audited Matrix Rust cryptographic client must acquire the lease before opening its IndexedDB crypto store, hold it for the entire client lifetime, release after closing the client and wiping runtime secrets, and refuse to initialize if unavailable. This helper is **not currently used** by the plaintext preview and does not imply encryption, device authentication or key recovery.
+
+### SDK bootstrap implementation checkpoint (non-shipping)
+
+`src/secure-data.mjs` now provides a read-only `SecureDataBootstrap` that acquires an exclusive Web Locks lease before SDK client construction, binds configured identity and device to `whoami()`, initializes the injected Rust crypto SDK with persistent IndexedDB, and inspects cross-signing/secret-storage/trusted-backup and user verification status. Every reported result has `canSend:false`, and there is **no** send/decrypt API. See `docs/SECURE-DATA-SDK-BOOTSTRAP.md` for exact scope and remaining tests. The source has mock unit tests; there is no pinned SDK installation, live cryptography, bundled WASM, verified key recovery or production enablement.

@@ -56,3 +56,7 @@ A Matrix homeserver's state response is not itself sufficient proof of trustwort
 ## Hermetic browser-to-Matrix integration verification
 
 The dependency-free Chromium test (`scripts/browser-smoke.mjs`) now runs a synthetic loopback Matrix Client-Server fixture and tests the actual web interface through fetch, authentication, room state, plaintext read/send, simulated server failure, same-transaction retry, event-id reconciliation, XSS-safe rendering, encrypted-room refusal and stale session cancellation. This fixture is test-only; it does not implement a production homeserver. The browser-bound Matrix `fetch` receiver is explicitly bound to the global environment (see `tests/matrix.test.mjs`) to avoid a browser-only illegal invocation. Do not interpret fixture success as a live Matrix homeserver, cryptographic E2EE or mobile carrier acceptance.
+
+## SDK-backed secure DATA boundary (not yet connected)
+
+`src/secure-data.mjs` is an isolated, read-only bootstrap for a future trusted Matrix Rust SDK consumer. It owns one exclusive browser crypto-store lease and validates homeserver, account, device and secure storage before initializing Rust crypto. It intentionally does not import a third-party SDK, expose sends, decrypt messages or establish verified devices/recovery. The current plaintext web preview remains separate and cannot treat this module as crypto-verification evidence. See [bootstrap design](SECURE-DATA-SDK-BOOTSTRAP.md).

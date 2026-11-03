@@ -41,7 +41,7 @@ To test DATA, choose **Connect DATA**, enter the **origin** of a Matrix homeserv
 | Unified UI and protocol/security badges | Implemented web preview |
 | Offline temporary personal notes | Implemented in tab memory |
 | DATA via existing Matrix homeserver | Limited unencrypted testing adapter |
-| End-to-end encrypted DATA | **Not implemented**; next security milestone |
+| End-to-end encrypted DATA | **Not implemented**; an isolated read-only SDK crypto bootstrap is now test-covered, but no SDK bundle or encrypted send/decrypt path is active |
 | RCS (carriers/providers) | **Not implemented**; requires legitimate access |
 | MMS and SMS | Native Android preview **delegates text composition** to the installed system messaging app; no GoreeCloud carrier send/receive adapter yet |
 | Android/iOS/Windows/Linux/macOS apps | Android native developer preview source added; no on-device acceptance. Other native platforms not implemented |
@@ -66,3 +66,7 @@ The web preview now keeps per-conversation drafts only in browser-tab memory. Ma
 ### Connection cancellation safeguards
 
 Disconnect now cancels a pending Matrix session and invalidates its authentication and room-list results. Room timeline reads use a separate generation ticket to prevent stale account/room results from mutating the active session. These are browser-preview lifecycle safeguards, not an audited encryption implementation.
+
+## Secure DATA bootstrap checkpoint
+
+An optional [read-only Matrix Rust-crypto initialization boundary](docs/SECURE-DATA-SDK-BOOTSTRAP.md) now lives in `src/secure-data.mjs`. It requires a trusted, externally supplied SDK factory, secure context, persistent IndexedDB and an exclusive browser Web Locks lease, plus matching homeserver user and device identities. It can inspect reported cross-signing/secret-storage/backup trust and peer verification states; **it never authorizes a send and exports no encrypted messaging operations**. Only isolated synthetic unit tests exist so far. No Matrix crypto library is installed, shipped, imported or exercised as WASM; the web preview remains plaintext-only. Full audited Matrix E2EE with identity verification, key recovery and encrypted multi-device roundtrips is tracked in issue #2.
