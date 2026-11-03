@@ -64,3 +64,7 @@ A separate **test-only** browser workspace `integration/matrix-sdk-browser/` now
 ## Actual browser integration (test-only)
 
 The `integration/matrix-sdk-browser/` CI fixture now links the real pinned Matrix Rust/WASM SDK into the **actual read-only `SecureDataBootstrap`** on a disposable Chromium loopback origin. It asserts fail-closed `whoami` mismatched-device rejection before opening a crypto database, exclusive Web Locks ownership, blocked recovery and room inspection, release after shutdown, and persistent per-device IndexedDB store reopen across navigation. It uses synthetic data and a test-only key, never a real account or real message. The resulting third-party browser JS/WASM bundle is temporary and is not imported or deployed by GoreeCloud Messenger. Actual user key custody, device verification, key recovery and encrypted multi-device messaging remain P0 release gates.
+
+## Fail-closed unverified-device policy enforcement
+
+The secure-DATA bootstrap now reads back `globalBlacklistUnverifiedDevices` immediately after setting it on the actual Matrix CryptoApi; if the SDK fails to report a strict `true`, initialization stops with `CRYPTO_POLICY_UNAVAILABLE` and releases the crypto-store lock and private key copy through its failure cleanup. A regression uses a mock SDK with a silent no-op setter. This is defense-in-depth only: enabling this SDK property does not independently prove recipient-device verification, secure message delivery, or E2EE readiness.

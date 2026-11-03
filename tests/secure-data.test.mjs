@@ -409,3 +409,25 @@ test("hashing failures cannot fall back to the SDK's shared default crypto store
     !error.message.includes("private source"));
   assert.deepEqual(env.calls, [], "Client and Web Locks must not be touched");
 });
+
+test("silently ignored unverified-device SDK policy cannot initialize secure DATA", async () => {
+  const env = fakeSdk();
+  const ignored = new Proxy(env.crypto, {
+    get(target, property, receiver) {
+      if (property === "globalBlacklistUnverifiedDevices") return false;
+      return Reflect.get(target, property, receiver);
+    },
+    set(target, property, value, receiver) {
+      if (property === "globalBlacklistUnverifiedDevices") return true;
+      return Reflect.set(target, property, value, receiver);
+    }
+  });
+  env.client.getCrypto = () => ignored;
+  await assert.rejects(
+    SecureDataBootstrap.open({ ...goodIdentity, ...env }),
+    error => error.code === "CRYPTO_POLICY_UNAVAILABLE"
+  );
+  assert.equal(env.isLocked(), false, "Failed crypto policy must release the store lease");
+  assert.equal(env.calls.filter(call => call === "stop").length, 1,
+    "Failed crypto policy must shut down the SDK client");
+});
