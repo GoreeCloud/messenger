@@ -237,6 +237,7 @@ function disconnect() {
   state.session?.close();
   state.session = null; state.rooms = []; state.userId = ""; state.selected = "notes";
   state.messages.clear(); state.allowPlaintext = false; state.loading = false;
+  $("connectButton").disabled = false;
   drafts.clearOtherAccounts();
   els.message.value = drafts.get("notes");
   $("plaintextConsent").checked = false; $("tokenInput").value = "";
