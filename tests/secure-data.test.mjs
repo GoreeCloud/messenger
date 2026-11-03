@@ -15,6 +15,16 @@ const goodIdentity = {
   // retrieve a stable, high-entropy per-device key from approved secret storage.
   storageKey: Uint8Array.from({ length: 32 }, (_, index) => index + 1)
 };
+// Cryptographic setup crosses browser/Node async scheduling boundaries.
+// A single setImmediate tick cannot prove that the mocked SDK has been
+// entered, so wait for the actual callback registration with a finite bound.
+async function waitForSdkCallback(getter, stage) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (typeof getter() === "function") return getter();
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.fail("Timed out waiting for SDK " + stage + " callback");
+}
 function fakeSdk(overrides = {}) {
   const calls = [];
   const crypto = {
@@ -462,8 +472,7 @@ test("cancellation while hashing store identity prevents lease or SDK initializa
       return await new Promise(resolve => { finishHash = resolve; });
     } }
   });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(typeof finishHash, "function");
+  await waitForSdkCallback(() => finishHash, "hashing");
   controller.abort();
   finishHash(new Uint8Array(32).buffer);
   await assert.rejects(task, error => error.code === "SESSION_CANCELLED");
@@ -481,8 +490,7 @@ test("cancellation during whoami stops SDK without creating crypto database", as
   const task = SecureDataBootstrap.open({
     ...goodIdentity, ...env, signal: controller.signal
   });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(typeof finishWhoami, "function");
+  await waitForSdkCallback(() => finishWhoami, "whoami");
   assert.equal(env.isLocked(), true);
   controller.abort();
   finishWhoami({ user_id: goodIdentity.userId, device_id: goodIdentity.deviceId });
@@ -504,8 +512,7 @@ test("cancellation during Rust initialization waits for SDK completion before re
   const task = SecureDataBootstrap.open({
     ...goodIdentity, ...env, signal: controller.signal
   });
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(typeof finishCrypto, "function");
+  await waitForSdkCallback(() => finishCrypto, "Rust crypto");
   controller.abort();
   assert.equal(env.isLocked(), true,
     "Never release lock while Rust crypto initialization remains in flight");
