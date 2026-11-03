@@ -24,3 +24,5 @@ npm ci --ignore-scripts
 npm audit --omit=dev --audit-level=high
 npm run smoke
 ```
+
+The compatibility smoke additionally asserts that the real SDK exposes `MatrixClient.getJoinedRoomMembers()` and that the crypto engine accepts and reports `globalBlacklistUnverifiedDevices=true`. `UserVerificationStatus` identity checks in the bootstrap use the official `needsUserApproval` and `isCrossSigningVerified()` shape. These APIs alone do not validate cryptographic recipient devices or enable sends.

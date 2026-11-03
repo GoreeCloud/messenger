@@ -36,3 +36,7 @@ The inspector now reads `getJoinedRoomMembers(roomId)` from the injected officia
 ## Session lifecycle, close races and stale trust data
 
 Concurrent calls to `close()` now await the **same** client shutdown and exclusive-store lease release. In-flight room membership, peer verification and recovery inspection revalidate session liveness after every asynchronous SDK call; if the client closes, the caller receives a generic `SESSION_CLOSED` error rather than stale trust data. The lease is released even if SDK shutdown fails. Synthetic tests reproduce delayed membership and backup responses, concurrent shutdown and failed shutdown. This is a safety boundary for future integration, not an encrypted messaging implementation.
+
+## SDK 45 verification-status compatibility
+
+The read-only inspector now uses exactly the supported `UserVerificationStatus` contract: `needsUserApproval === false` and `isCrossSigningVerified() === true`. It does **not** invent or require a `known` property. Missing SDK methods or undefined approval fields fail closed. This only describes **user identity** verification, not per-device trust; all sends remain disabled. The isolated real-SDK smoke also validates `getJoinedRoomMembers` and the writable `globalBlacklistUnverifiedDevices` property. See https://matrix-org.github.io/matrix-js-sdk/classes/crypto-api.UserVerificationStatus.html and https://matrix-org.github.io/matrix-js-sdk/interfaces/crypto-api.CryptoApi.html .

@@ -21,7 +21,7 @@ function fakeSdk(overrides = {}) {
     async isKeyBackupTrusted() { return { trusted: true, matchesDecryptionKey: true }; },
     async isEncryptionEnabledInRoom() { return true; },
     async getUserVerificationStatus() {
-      return { known: true, needsUserApproval: false, isCrossSigningVerified() { return true; } };
+      return { needsUserApproval: false, isCrossSigningVerified() { return true; } };
     },
     ...overrides.crypto
   };
@@ -147,7 +147,7 @@ test("room inspection uses SDK membership rather than caller-supplied peer lists
   const env = fakeSdk({ crypto: {
     async isEncryptionEnabledInRoom(room) { return room !== "!plain:example.test"; },
     async getUserVerificationStatus(user) {
-      return { known: true, needsUserApproval: user === "@rotated:example.test",
+      return { needsUserApproval: user === "@rotated:example.test",
         isCrossSigningVerified() { return true; } };
     }
   }, client: {
@@ -204,6 +204,37 @@ test("missing or malicious membership, own-user omission and API errors fail clo
   assert.doesNotMatch(state.reason, /untrusted server/);
   await s.close();
 });
+test("SDK-shaped user verification does not require unsupported known field", async () => {
+  const env = fakeSdk({ crypto: {
+    async getUserVerificationStatus() {
+      // Real UserVerificationStatus has no "known" member.
+      return { needsUserApproval: false, isCrossSigningVerified() { return true; } };
+    }
+  }});
+  const session = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  const room = await session.inspectRoom("!secure:example.test");
+  assert.equal(room.verifiedIdentities, true);
+  assert.equal(room.peers[0].verified, true);
+  assert.equal(room.canSend, false, "A verified user is not proof of trusted recipient devices");
+  await session.close();
+});
+
+test("incomplete or changed SDK user trust status always fails closed", async () => {
+  for (const status of [
+    null, {}, { isCrossSigningVerified() { return true; } },
+    { needsUserApproval: false },
+    { needsUserApproval: true, isCrossSigningVerified() { return true; } },
+    { needsUserApproval: false, isCrossSigningVerified() { return false; } },
+  ]) {
+    const env = fakeSdk({ crypto: { async getUserVerificationStatus() { return status; } } });
+    const session = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+    const result = await session.inspectRoom("!secure:example.test");
+    assert.notEqual(result.verifiedIdentities, true);
+    assert.equal(result.canSend, false);
+    await session.close();
+  }
+});
+
 test("closing the session prevents further trust or recovery calls", async () => {
   const env = fakeSdk();
   const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
