@@ -198,7 +198,22 @@ try {
   if (socket) socket.close();
   for (const p of pending.values()) { clearTimeout(p.timer); p.reject(new Error('Browser terminated')); }
   pending.clear();
-  if (browser) browser.kill('SIGTERM');
+  if (browser && browser.exitCode === null && browser.signalCode === null) {
+    const exited = new Promise(resolve => browser.once('exit', resolve));
+    browser.kill('SIGTERM');
+    await Promise.race([exited, sleep(1500)]);
+    if (browser.exitCode === null && browser.signalCode === null) {
+      browser.kill('SIGKILL');
+      await Promise.race([exited, sleep(1500)]);
+    }
+  }
+  server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));
-  rmSync(profile, { recursive: true, force: true });
+  // Chrome may still flush profile journal files briefly after terminating.
+  // Cleanup errors must not mask the result of browser interaction checks.
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 12, retryDelay: 100 });
+  } catch (error) {
+    console.warn('Could not fully clean temporary Chrome profile:', error.code);
+  }
 }
