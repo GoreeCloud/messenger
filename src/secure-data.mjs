@@ -168,6 +168,10 @@ export class SecureDataBootstrap {
       // Library-level defense-in-depth: do not send secrets to unverified
       // devices even if future callers bypass the current read-only facade.
       crypto.globalBlacklistUnverifiedDevices = true;
+      if (crypto.globalBlacklistUnverifiedDevices !== true) {
+        throw fail("CRYPTO_POLICY_UNAVAILABLE",
+          "Unable to enforce the SDK unverified-device block");
+      }
       return new SecureDataBootstrap(
         { homeserver: origin, userId: account, deviceId: id }, client, crypto, lease, storeKey
       );
