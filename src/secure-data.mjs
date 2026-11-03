@@ -53,6 +53,7 @@ export class SecureDataBootstrap {
   #crypto;
   #lease;
   #closed = false;
+  #closing = null;
   #identity;
 
   constructor(key, client, crypto, lease) {
@@ -140,7 +141,15 @@ export class SecureDataBootstrap {
 
   get closed() { return this.#closed; }
   get identity() { return { ...this.#identity }; }
-  get cryptoInitialized() { return !this.#closed; }
+  get cryptoInitialized() { return !this.#closed && this.#crypto !== null; }
+
+  // Operations may await SDK network/store calls while another event closes
+  // the client. Never allow results obtained after close to become trust data.
+  async #checked(promise) {
+    const result = await promise;
+    assertOpen(this);
+    return result;
+  }
 
   /**
    * Read-only account recovery assessment. Missing or untrusted backup never
@@ -149,13 +158,15 @@ export class SecureDataBootstrap {
    */
   async inspectRecovery() {
     assertOpen(this);
+    const crypto = this.#crypto;
     try {
-      const crossSigning = await this.#crypto.isCrossSigningReady() === true;
-      const secretStorage = await this.#crypto.isSecretStorageReady() === true;
-      const version = await this.#crypto.getActiveSessionBackupVersion();
+      const crossSigning = await this.#checked(crypto.isCrossSigningReady()) === true;
+      const secretStorage = await this.#checked(crypto.isSecretStorageReady()) === true;
+      const version = await this.#checked(crypto.getActiveSessionBackupVersion());
       const info = typeof version === "string" && version.length > 0
-        ? await this.#crypto.getKeyBackupInfo() : null;
-      const trusted = info ? await this.#crypto.isKeyBackupTrusted(info) : null;
+        ? await this.#checked(crypto.getKeyBackupInfo()) : null;
+      const trusted = info ? await this.#checked(crypto.isKeyBackupTrusted(info)) : null;
+      assertOpen(this);
       return blocked("Device verification, key recovery and encrypted messaging are not yet accepted", {
         cryptoInitialized: true,
         crossSigning, secretStorage,
@@ -164,6 +175,7 @@ export class SecureDataBootstrap {
           version && trusted?.trusted && trusted?.matchesDecryptionKey)
       });
     } catch {
+      assertOpen(this);
       return blocked("Cannot verify secure DATA recovery prerequisites", {
         cryptoInitialized: true, crossSigning: false,
         secretStorage: false, backupTrusted: false, recoveryPrerequisitesPresent: false
@@ -186,12 +198,14 @@ export class SecureDataBootstrap {
         roomId.length > 255) {
       return blocked("A valid Matrix room identifier is required");
     }
+    const crypto = this.#crypto;
+    const client = this.#client;
     try {
-      const encryptionReported = await this.#crypto.isEncryptionEnabledInRoom(roomId) === true;
+      const encryptionReported = await this.#checked(crypto.isEncryptionEnabledInRoom(roomId)) === true;
       if (!encryptionReported) {
         return blocked("Room encryption is absent or unknown", { encryptionReported: false });
       }
-      const membership = await this.#client.getJoinedRoomMembers(roomId);
+      const membership = await this.#checked(client.getJoinedRoomMembers(roomId));
       if (!Array.isArray(membership?.joined) || membership.joined.length < 2 ||
           membership.joined.length > 80) {
         return blocked("Room membership is missing, incomplete or too large", { encryptionReported });
@@ -209,13 +223,14 @@ export class SecureDataBootstrap {
       }
       const peers = [];
       for (const userId of identities) {
-        const trust = await this.#crypto.getUserVerificationStatus(userId);
+        const trust = await this.#checked(crypto.getUserVerificationStatus(userId));
         peers.push({
           userId,
           verified: trust?.needsUserApproval !== true &&
             trust?.known === true && trust?.isCrossSigningVerified?.() === true
         });
       }
+      assertOpen(this);
       const verifiedIdentities = peers.every(x => x.verified);
       return blocked(verifiedIdentities
         ? "Recipient devices and actual encryption/decryption remain unverified"
@@ -223,20 +238,26 @@ export class SecureDataBootstrap {
         encryptionReported, verifiedIdentities, peers, roomMemberCount: identities.size + 1
       });
     } catch {
+      assertOpen(this);
       return blocked("Unable to verify room encryption and joined participant identities");
     }
   }
 
   // No send/read/backup reset/auto-cross-signing methods intentionally.
   async close() {
-    if (this.#closed) return;
+    if (this.#closing) return this.#closing;
     this.#closed = true;
     const client = this.#client;
     const lease = this.#lease;
     this.#client = null;
     this.#crypto = null;
     this.#lease = null;
-    try { await client.stopClient(); }
-    finally { await lease.release(); }
+    // One shared shutdown promise: concurrent close callers must both wait
+    // for stopClient AND lease release before opening another crypto store.
+    this.#closing = (async () => {
+      try { await client.stopClient(); }
+      finally { await lease.release(); }
+    })();
+    return this.#closing;
   }
 }

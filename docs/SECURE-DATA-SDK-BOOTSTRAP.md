@@ -32,3 +32,7 @@ Run `npm run check` and `npm test`. The source module is intentionally dormant a
 ## Room membership trust boundary
 
 The inspector now reads `getJoinedRoomMembers(roomId)` from the injected official Matrix SDK and checks **all** reported joined user identities, including its own account. Caller-supplied peer lists are explicitly refused so a caller cannot omit unverified users and mislabel the result. Missing/malformed responses or identity changes fail closed. It still does **not** enumerate every device, establish real server honesty, or permit any message to be sent. A malicious server can misreport membership; any production secure path must combine membership, device-key verification, identity pinning and actual encrypted roundtrips.
+
+## Session lifecycle, close races and stale trust data
+
+Concurrent calls to `close()` now await the **same** client shutdown and exclusive-store lease release. In-flight room membership, peer verification and recovery inspection revalidate session liveness after every asynchronous SDK call; if the client closes, the caller receives a generic `SESSION_CLOSED` error rather than stale trust data. The lease is released even if SDK shutdown fails. Synthetic tests reproduce delayed membership and backup responses, concurrent shutdown and failed shutdown. This is a safety boundary for future integration, not an encrypted messaging implementation.
