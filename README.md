@@ -83,3 +83,7 @@ GoreeCloud Messenger maintains **both** its original browser app (`web/`) and it
 - **Native Android app:** first-party Java Activity with native memory-only personal notes and an explicit SMS `ACTION_SENDTO` handoff. Notes are not saved to disk, synced, backed up, or preserved across Activity recreation; SMS/MMS/RCS are **not** sent or received by GoreeCloud. Android does not request dangerous SMS permissions or default-handler role.
 
 Both apps remain development previews. Dedicated web/Android production packaging, native Matrix secure DATA messaging, verified E2EE, default SMS/MMS role and authorized RCS integration are future acceptance milestones, not shipped features.
+
+### Web app home-screen metadata
+
+The web client now serves a same-origin web-app manifest and SVG application icon aligned with the native Android vector. The manifest enables supported browsers to expose the correct GoreeCloud Messenger name/icon/display metadata and a scoped start URL. This is still the **development web app**: no service worker, offline cache, notification delivery, secure-background sync, stored credentials, installed-platform testing or production hosting is claimed. Browser runtime smoke checks the manifest and icon over HTTP. Use an HTTPS origin for remote hosting; the current crypto-less DATA preview remains explicitly plaintext.
