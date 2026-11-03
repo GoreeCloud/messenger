@@ -23,10 +23,10 @@ const dbPrefix = "goreecloud-messenger-v1-";
 const validToken = "synthetic-never-valid-token";
 const invalidToken = "synthetic-mismatch-device-token";
 
-async function open(accessToken, onCreate = () => {}) {
+async function open(accessToken, onCreate = () => {}, storeKey = key) {
   return SecureDataBootstrap.open({
     homeserver: location.origin, accessToken, userId: owner, deviceId: device,
-    storageKey: key, createClient: options => {
+    storageKey: storeKey, createClient: options => {
       const client = createClient(options);
       onCreate(client);
       return client;
@@ -55,6 +55,31 @@ async function run() {
     const empty = (await indexedDB.databases()).map(x => x.name || "");
     insist(!empty.some(name => name.startsWith(dbPrefix)),
       "Invalid identity must not initialize a crypto-store database");
+  }
+
+  if (phase === "reopen") {
+    // A wrong key must never silently create a usable view of an existing
+    // encrypted crypto database. The original correct key must still work.
+    const existing = (await indexedDB.databases()).map(db => db.name || "");
+    insist(existing.some(name => name.startsWith(dbPrefix)),
+      "Precondition: previous Rust IndexedDB store is missing");
+    const wrongKey = Uint8Array.from({ length: 32 }, (_, n) => n + 17);
+    let wrongKeyRejected = false;
+    try {
+      const unexpectedlyOpened = await open(validToken, () => {}, wrongKey);
+      await unexpectedlyOpened.close();
+    } catch (error) {
+      wrongKeyRejected = error?.code === "INITIALIZATION_FAILED";
+    } finally {
+      wrongKey.fill(0);
+    }
+    insist(wrongKeyRejected, "The real Rust store accepted an incorrect device key");
+    const originalRemains = (await indexedDB.databases()).map(db => db.name || "");
+    insist(existing.every(name => originalRemains.includes(name)),
+      "Wrong-key probe unexpectedly removed the persistent crypto store");
+    // An initialization error must have released the exclusive Web Lock.
+    const afterRejection = await acquireCryptoStoreLease();
+    await afterRejection.release();
   }
 
   let sdkClient;
