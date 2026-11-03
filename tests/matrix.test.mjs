@@ -32,6 +32,14 @@ test("rejects unreasonable access-token length", () => {
     homeserver: "https://example.org", accessToken: "a".repeat(8193)
   }), /bounded/);
 });
+test("control characters in Matrix token are rejected before HTTP headers", () => {
+  for (const token of ["bearer\r\nX-Injected: true", "has\u0000NUL", "bad\tTAB"]) {
+    assert.throws(() => new MatrixPlaintextSession({
+      homeserver: "https://matrix.example.org", accessToken: token
+    }), /bounded/);
+  }
+});
+
 test("encrypted or unknown rooms are blocked before any send or read", async () => {
   let calls = 0;
   const session = new MatrixPlaintextSession({
@@ -110,8 +118,53 @@ test("read messages rechecks room state, filters text, and identifies own messag
   assert.equal(events[0].own, false);
   assert.equal(events[1].text, "hello");
   assert.equal(events[1].own, true);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3, "Timeline must recheck encryption state after fetching");
 });
+test("plaintext timeline is blocked if room becomes encrypted during fetch", async () => {
+  const calls = [];
+  const session = new MatrixPlaintextSession({
+    homeserver: "https://example.org", accessToken: "fixture",
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url.endsWith("/state/m.room.encryption")) {
+        return calls.length === 1 ? fake(404) :
+          fake(200, { algorithm: "m.megolm.v1.aes-sha2" });
+      }
+      return fake(200, { chunk: [{
+        type: "m.room.message", event_id: "$untrusted",
+        sender: "@peer:example.org",
+        content: { msgtype: "m.text", body: "Do not render stale timeline" }
+      }] });
+    }
+  });
+  await assert.rejects(
+    session.readMessages({ id: "!room:example.org", encrypted: "plaintext" }),
+    /Room encryption changed/
+  );
+  assert.equal(calls.length, 3);
+  session.close();
+});
+
+test("failed post-fetch encryption-state lookup never returns timeline", async () => {
+  let checks = 0;
+  const session = new MatrixPlaintextSession({
+    homeserver: "https://example.org", accessToken: "fixture",
+    fetchImpl: async (url) => {
+      if (url.endsWith("/state/m.room.encryption")) {
+        checks++;
+        return checks === 1 ? fake(404) : fake(403);
+      }
+      return fake(200, { chunk: [] });
+    }
+  });
+  await assert.rejects(
+    session.readMessages({ id: "!room:example.org", encrypted: "plaintext" }),
+    error => error instanceof MatrixError && error.status === 403
+  );
+  assert.equal(checks, 2);
+  session.close();
+});
+
 test("closing rejects new requests and aborts in-flight requests", async () => {
   let fired = false, capturedSignal;
   const session = new MatrixPlaintextSession({

@@ -3,7 +3,7 @@
     <string name="app_name">GoreeCloud Messenger</string>
     <string name="preview">ANDROID DEVELOPMENT PREVIEW</string>
     <string name="headline">Messages, on your terms.</string>
-    <string name="intro">One future inbox for RCS, MMS, SMS and private DATA. This early native build only opens your existing messaging app to compose a text.</string>
+    <string name="intro">A native preview for temporary local notes and delegated SMS composition. RCS, MMS, and encrypted DATA are not integrated yet.</string>
     <string name="protocol_heading">PROTOCOL STATUS</string>
     <string name="sms_status">SMS · delegated to device messaging app</string>
     <string name="mms_status">MMS · native receive/send not implemented</string>
@@ -19,5 +19,16 @@
     <string name="no_handler">No compatible messaging app is installed.</string>
     <string name="invalid_recipient">Enter a valid phone number (3–15 digits).</string>
     <string name="ready">Your existing messaging app will open with a draft. Nothing was sent.</string>
+    <string name="notes_heading">Temporary local notes</string>
+    <string name="notes_explainer">Save notes on this screen without sending anything. Notes stay in memory and disappear when the app restarts, closes, or rotates. Not encrypted or backed up.</string>
+    <string name="notes_entry_label">Local note text</string>
+    <string name="notes_hint">Write a temporary note…</string>
+    <string name="notes_save">Save note</string>
+    <string name="notes_clear">Clear notes</string>
+    <string name="notes_count">%1$d temporary notes</string>
+    <string name="notes_empty">No local notes yet.</string>
+    <string name="notes_invalid">Enter a note containing 1–16,000 characters.</string>
+    <string name="notes_clear_title">Clear temporary notes?</string>
+    <string name="notes_clear_confirm">This immediately discards every saved local note on this screen. It cannot be undone.</string>
     <string name="footnote">No SMS permissions · No message interception · No silent fallback · No tracking</string>
 </resources>

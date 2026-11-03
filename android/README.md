@@ -2,7 +2,9 @@
 
 **Status:** Developer-only Android application, not an SMS/MMS provider, and not a production messenger.
 
-This directory contains an original Android Activity written in Java, displaying the four target modes: DATA, RCS, MMS, and SMS. The working interaction is **safe, delegated text composition**: the user enters a phone number and optional message, taps *Open system messaging app*, then reviews and sends in the separately installed default messaging app. The app does **not** transmit an SMS, read SMS/MMS databases, receive messages, prompt for the default SMS role, or request dangerous SMS permissions. It is not a bridge that can detect or control whether the handler chooses SMS, MMS or RCS.
+This directory contains an original Android Activity written in Java, displaying the four target modes: DATA, RCS, MMS, and SMS. The native app supports **temporary local notes** and **safe, delegated text composition**. Local notes live only in the current Activity memory, up to 50 entries / 16,000 characters each, and are intentionally discarded on Activity recreation, closing or process death. The note input is excluded from Android view-state saving and autofill; nothing is backed up, persisted, synced, or sent. A confirm dialog protects destructive clear; JVM tests check note bounds, ordering, snapshots and discard behavior.
+
+For carrier composition, the working interaction is **safe, delegated text composition**: the user enters a phone number and optional message, taps *Open system messaging app*, then reviews and sends in the separately installed default messaging app. The app does **not** transmit an SMS, read SMS/MMS databases, receive messages, prompt for the default SMS role, or request dangerous SMS permissions. It is not a bridge that can detect or control whether the handler chooses SMS, MMS or RCS.
 
 ## First-party GC UI semantic colors
 

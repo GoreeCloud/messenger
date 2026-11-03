@@ -35,7 +35,8 @@ export class MatrixPlaintextSession {
   #controllers = new Set();
   constructor({ homeserver, accessToken, fetchImpl = fetch }) {
     this.#base = validateHomeserver(homeserver);
-    if (typeof accessToken !== "string" || !accessToken.trim() || accessToken.length > 8192) {
+    if (typeof accessToken !== "string" || !accessToken.trim() ||
+        accessToken.length > 8192 || /[\r\n\u0000-\u001f\u007f]/u.test(accessToken)) {
       throw new MatrixError("A valid bounded access token is required");
     }
     if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
@@ -133,6 +134,10 @@ export class MatrixPlaintextSession {
   async readMessages(room, ownUserId = "") {
     await this.#requireFreshPlaintext(room);
     const result = await this.#call("rooms/" + encodeURIComponent(room.id) + "/messages?dir=b&limit=40");
+    // The room may have become encrypted while the timeline request was in
+    // flight. Never expose a stale plaintext response without checking again.
+    // This remains a non-atomic development-only safeguard, not E2EE.
+    await this.#requireFreshPlaintext(room);
     if (!Array.isArray(result.chunk)) throw new MatrixError("Invalid homeserver timeline");
     return result.chunk.filter(e => e.type === "m.room.message" &&
         e.content?.msgtype === "m.text" && typeof e.content.body === "string")

@@ -81,3 +81,7 @@ Matrix SDK documents that `initRustCrypto({useIndexedDB:true})` without a `stora
 ## Isolated persistent Matrix Rust browser-store test
 
 The separate CI-only Matrix Rust browser probe initializes `matrix-js-sdk@45.0.0` with an explicitly supplied synthetic storage key in Chromium IndexedDB, then closes and reopens that test store after navigation. The JS/WASM bundle is built from an integrity-pinned audited npm graph and served exclusively from loopback; all test databases are disposable. **No live access token or user messages** are involved. A successful local reopen does not prove a secure release key manager, production E2EE, key backup, multi-device recovery or actual encrypted send/decrypt.
+
+## Web plaintext timeline race hardening
+
+The developer-only Matrix plaintext client now rechecks room encryption state **after** the timeline response returns, before any message is rendered. If a room turns encrypted or its state becomes inaccessible, the received plaintext timeline is rejected. The extra state request carries a latency cost and remains non-atomic with changes occurring afterward; it is **not** end-to-end encryption. Access tokens containing HTTP control characters are also rejected before headers are constructed.
