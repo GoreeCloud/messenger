@@ -6,7 +6,8 @@
  */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile, readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep, extname, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -31,7 +32,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': mime[extname(path)], 'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff' });
     res.end(data);
-  } catch { res.writeHead(404); res.end(); }
+  } catch (error) { console.error('Static test server:', req.url, error.message); res.writeHead(404); res.end(); }
 });
 let browser, socket;
 const pending = new Map();
