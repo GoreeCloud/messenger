@@ -44,6 +44,27 @@ function cryptoMethod(crypto, method) {
     throw fail("CRYPTO_INCOMPLETE", "Rust crypto SDK is missing a required security API");
   }
 }
+/**
+ * Derive a stable opaque IndexedDB namespace from an *authenticated* Matrix
+ * identity tuple. This is not a cryptographic secret; it is an origin-local
+ * database selector that prevents normal account/device store collisions.
+ * The same input must yield the same prefix on every device restart.
+ */
+async function scopedCryptoDatabase(origin, userId, deviceId, subtle) {
+  if (!subtle || typeof subtle.digest !== "function") {
+    throw fail("STORE_SCOPE_UNAVAILABLE", "Secure browser hashing is required for crypto-store separation");
+  }
+  try {
+    const source = new TextEncoder().encode(JSON.stringify([origin, userId, deviceId]));
+    const digest = new Uint8Array(await subtle.digest("SHA-256", source));
+    if (digest.length !== 32) throw new Error("Invalid digest");
+    return "goreecloud-messenger-v1-" + [...digest]
+      .map(byte => byte.toString(16).padStart(2, "0")).join("");
+  } catch {
+    throw fail("STORE_SCOPE_UNAVAILABLE", "Cannot establish a device-specific crypto-store namespace");
+  }
+}
+
 function blocked(reason, extra = {}) {
   return { status: "blocked", canSend: false, reason, ...extra };
 }
@@ -74,7 +95,8 @@ export class SecureDataBootstrap {
     homeserver, accessToken, userId, deviceId, createClient, storageKey,
     acquireLease = acquireCryptoStoreLease,
     secureContext = globalThis.isSecureContext,
-    indexedDB = globalThis.indexedDB
+    indexedDB = globalThis.indexedDB,
+    subtle = globalThis.crypto?.subtle
   } = {}) {
     const origin = validateHomeserver(homeserver);
     const account = identity(userId, "@", "user identity");
@@ -98,6 +120,9 @@ export class SecureDataBootstrap {
     if (typeof createClient !== "function" || typeof acquireLease !== "function") {
       throw fail("SDK_MISSING", "An approved Matrix Rust crypto SDK is required");
     }
+    // Hash the exact configured identity before opening any persistent store;
+    // the server-issued whoami response is checked before initializing crypto.
+    const cryptoDatabasePrefix = await scopedCryptoDatabase(origin, account, id, subtle);
 
     // The Web Locks guard protects the entire Rust WASM/IndexedDB lifetime.
     // It is acquired *before* creating a client so parallel tabs fail closed.
@@ -129,7 +154,10 @@ export class SecureDataBootstrap {
       if (who?.user_id !== account || who?.device_id !== id) {
         throw fail("IDENTITY_MISMATCH", "Matrix token did not match the account and device");
       }
-      await client.initRustCrypto({ useIndexedDB: true, storageKey: storeKey });
+      await client.initRustCrypto({
+        useIndexedDB: true, storageKey: storeKey,
+        cryptoDatabasePrefix
+      });
       const crypto = client.getCrypto();
       for (const method of [
         "isEncryptionEnabledInRoom", "isCrossSigningReady",

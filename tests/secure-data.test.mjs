@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash, webcrypto } from "node:crypto";
 import { SecureDataBootstrap } from "../src/secure-data.mjs";
 
 const goodIdentity = {
@@ -9,6 +10,7 @@ const goodIdentity = {
   deviceId: "ALICE1",
   secureContext: true,
   indexedDB: { open() {} },
+  subtle: webcrypto.subtle,
   // Synthetic input is deterministic for tests ONLY. Real applications must
   // retrieve a stable, high-entropy per-device key from approved secret storage.
   storageKey: Uint8Array.from({ length: 32 }, (_, index) => index + 1)
@@ -31,7 +33,8 @@ function fakeSdk(overrides = {}) {
   const client = {
     async whoami() { calls.push("whoami"); return { user_id: goodIdentity.userId, device_id: goodIdentity.deviceId }; },
     async initRustCrypto(options) {
-      calls.push(["rust-crypto", options.useIndexedDB, options.storageKey]);
+      calls.push(["rust-crypto", options.useIndexedDB, options.storageKey,
+        options.cryptoDatabasePrefix]);
     },
     getCrypto() { calls.push("get-crypto"); return crypto; },
     async getJoinedRoomMembers() {
@@ -60,7 +63,8 @@ test("rejects non-secure contexts, absent IndexedDB and invalid identity before 
     { userId: "not-a-Matrix-ID" }, { userId: "@missingdomain" }, { deviceId: "" },
     { accessToken: "bad\nBearer" }, { homeserver: "http://matrix.example.test" },
     { storageKey: null }, { storageKey: "hardcoded-password" },
-    { storageKey: new Uint8Array(31) }, { storageKey: new Uint8Array(32) }
+    { storageKey: new Uint8Array(31) }, { storageKey: new Uint8Array(32) },
+    { subtle: null }, { subtle: { digest: null } }
   ]) {
     await assert.rejects(SecureDataBootstrap.open({ ...goodIdentity, ...env, ...fields }));
   }
@@ -82,6 +86,12 @@ test("binds account and device before opening Rust crypto store", async () => {
   assert.notStrictEqual(sdkStoreKey, goodIdentity.storageKey,
     "SDK must not receive a mutable caller-owned key buffer");
   assert.deepEqual([...sdkStoreKey], [...goodIdentity.storageKey]);
+  const expectedScope = "goreecloud-messenger-v1-" + createHash("sha256")
+    .update(JSON.stringify([goodIdentity.homeserver, goodIdentity.userId, goodIdentity.deviceId]))
+    .digest("hex");
+  assert.equal(env.calls[3][3], expectedScope);
+  assert.doesNotMatch(expectedScope, /alice|example[.]test|ALICE1/,
+    "IndexedDB name should not contain readable account identifiers");
   assert.equal(env.crypto.globalBlacklistUnverifiedDevices, true);
   const opts = env.calls[1][1];
   assert.equal(opts.deviceId, goodIdentity.deviceId);
@@ -363,4 +373,39 @@ test("simultaneous shutdown wipes the key even if stopClient throws", async () =
   await assert.rejects(session.close(), /stop rejection/);
   assert.ok(capturedKey.every(byte => byte === 0));
   assert.equal(env.isLocked(), false);
+});
+
+test("crypto IndexedDB namespace is stable within a device and isolated across identities", async () => {
+  const scopeFor = async (override = {}) => {
+    const identity = { ...goodIdentity, ...override };
+    const env = fakeSdk({ client: {
+      async whoami() {
+        return { user_id: identity.userId, device_id: identity.deviceId };
+      }
+    } });
+    const session = await SecureDataBootstrap.open({ ...identity, ...env });
+    const scope = env.calls.find(c => Array.isArray(c) && c[0] === "rust-crypto")[3];
+    await session.close();
+    return scope;
+  };
+  const original = await scopeFor();
+  assert.equal(await scopeFor(), original);
+  for (const changes of [
+    { homeserver: "https://other.example.test" },
+    { userId: "@bob:example.test" },
+    { deviceId: "ALICE2" }
+  ]) {
+    assert.notEqual(await scopeFor(changes), original,
+      "Different server, user or device must never share the same crypto-store prefix");
+  }
+});
+
+test("hashing failures cannot fall back to the SDK's shared default crypto store", async () => {
+  const env = fakeSdk();
+  await assert.rejects(SecureDataBootstrap.open({
+    ...goodIdentity, ...env,
+    subtle: { async digest() { throw Error("private source details"); } }
+  }), error => error.code === "STORE_SCOPE_UNAVAILABLE" &&
+    !error.message.includes("private source"));
+  assert.deepEqual(env.calls, [], "Client and Web Locks must not be touched");
 });
