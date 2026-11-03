@@ -1,0 +1,41 @@
+name: Matrix Rust IndexedDB browser probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integration/matrix-sdk-browser/**"
+      - ".github/workflows/matrix-sdk-browser.yml"
+  pull_request:
+    paths:
+      - "integration/matrix-sdk-browser/**"
+      - ".github/workflows/matrix-sdk-browser.yml"
+permissions:
+  contents: read
+jobs:
+  matrix-rust-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: integration/matrix-sdk-browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install SDK and bundler without lifecycle scripts
+        run: npm ci --ignore-scripts --no-fund
+      - name: Audit test dependency graph for high and critical findings
+        run: npm audit --audit-level=high
+      - name: Build test-only browser SDK/WASM assets
+        run: npm run build
+      - name: Test actual Rust IndexedDB persistence and reopen in Chromium
+        run: npm run smoke
+      - name: Preserve dependency lockfile for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-rust-browser-probe-lock
+          path: integration/matrix-sdk-browser/package-lock.json
+          retention-days: 7
+          if-no-files-found: ignore
