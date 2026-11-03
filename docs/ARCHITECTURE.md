@@ -14,7 +14,7 @@
 
 1. **Domain:** immutable message ID, protocol/security state, delivery receipts, conversation membership, attachment descriptors, idempotency and audit-safe diagnostics.
 2. **Secure DATA:** vetted Matrix Rust crypto bindings or an audited equivalent with authenticated devices, key verification, cross-signing, secure backup, forward secrecy, recovery and migration testing. Never claim E2EE solely because HTTPS is used.
-3. **Android SMS/MMS:** native Kotlin app, default SMS role, Telephony APIs, subscription selection and carrier-specific tests. No SMS/MMS support from browsers or iOS third-party apps.
+3. **Android SMS/MMS:** A native Java Android preview now delegates text composition to the installed messaging app (no SMS permissions or role takeover). A future, separately gated full handler requires the Android default SMS role, Telephony APIs, inbound SMS/MMS persistence, subscription selection, denial recovery and carrier-specific tests. No SMS/MMS support from browsers or iOS third-party apps.
 4. **RCS:** only legitimate operator/system-privileged interfaces or a provider-authorized bridge; never automate/scrape Google Messages or imply a public third-party RCS API exists. Obtain access and compatibility evidence before enabling.
 5. **Cross-platform:** native platform packages and a shared protocol/policy model. Web is a supplemental surface, not a native mobile substitute.
 6. **Operations:** self-hostable Matrix/Synapse services with secure DNS, TLS, access control, backups, retention, rate limits, monitoring, abuse controls and documented data ownership.
@@ -48,3 +48,7 @@ A Matrix homeserver's state response is not itself sufficient proof of trustwort
 `src/timeline.mjs` merges bounded Matrix server history with pending and failed local sends. Reconciliation requires the server event ID from the original send response; it does not equate same-text messages with the same event. `src/drafts.mjs` keeps the current composer value for each conversation in volatile tab memory. The connection lifecycle clears account-specific drafts. `src/crypto-store-lease.mjs` is an isolated, currently unused Web Locks guard for a future Rust crypto store integration; E2EE remains blocked.
 
 `src/session-epoch.mjs` owns monotonic invalidation tickets for asynchronous work. `web/app.mjs` uses separate connection and timeline epochs to avoid reconnecting from stale authentication results or overwriting a switched account's messages.
+
+## Native Android preview boundary
+
+`android/` uses Android Gradle Plugin 8.13.2 and an original native Java Activity. `Intent.ACTION_SENDTO` with a validated `smsto:` recipient hands composition to the installed SMS app. The delegated app independently controls send confirmation, SIM, transport and persistence; **GoreeCloud does not send or receive carrier messages**. No dangerous SMS permissions, default role request, SMS/MMS receivers, hidden APIs, or third-party code are present. See [Android developer preview](../android/README.md).

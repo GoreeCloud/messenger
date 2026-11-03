@@ -2,7 +2,7 @@
 
 **One app. Four messaging protocols. Complete control.**
 
-GoreeCloud Messenger is a privacy-first unified messaging project intended to support **RCS, MMS, SMS, and DATA**. This repository currently contains a **web development foundation**, not a production messenger or finished native apps. The feature specification in the product brief is a **roadmap**, not an implemented feature list.
+GoreeCloud Messenger is a privacy-first unified messaging project intended to support **RCS, MMS, SMS, and DATA**. This repository contains a **web development foundation** and a separate **native Android developer preview**. Neither is a production messenger or a complete cellular/RCS client. The feature specification in the product brief is a **roadmap**, not an implemented feature list.
 
 ## Current implementation (web development preview)
 
@@ -12,7 +12,13 @@ GoreeCloud Messenger is a privacy-first unified messaging project intended to su
 - **Security gates:** Encrypted/unknown-status rooms fail closed. Unsupported RCS/MMS/SMS adapters cannot send. Default protocol routing requires independent cryptographic verification of DATA before classifying it as an encrypted route; SMS/MMS/RCS can never be promoted by a carrier-reported encryption flag in this foundation; ciphertext-to-plaintext downgrades require confirmation in transport policy (and are not implemented as automatic UI sends).
 - Node-built-in tests for routing, encryption-state gating, TLS, session cancellation, duplicate-send coalescing, and explicit consent, plus GitHub Actions checks.
 
-**Critical limitation:** This version **does not provide secure DATA/E2EE**. It does not encrypt or decrypt Matrix room events, verify devices/keys, or store/restore secrets. The limited Matrix plaintext mode is for testing only. Never enter highly sensitive content into unencrypted Matrix rooms. Matrix's server can access plaintext messages; use a disposable test account. This web version **cannot** register as Android's default SMS application and **does not** implement SMS, MMS or carrier RCS.
+**Critical limitation:** This version **does not provide secure DATA/E2EE**. It does not encrypt or decrypt Matrix room events, verify devices/keys, or store/restore secrets. The limited Matrix plaintext mode is for testing only. Never enter highly sensitive content into unencrypted Matrix rooms. Matrix's server can access plaintext messages; use a disposable test account. This web version **cannot** register as Android's default SMS application and **does not** implement SMS, MMS or carrier RCS. The separate Android app is intentionally not eligible for the default SMS role; it only opens the installed messaging app's compose screen.
+
+## Native Android developer preview
+
+The first-party [Android Java application](android/README.md) has a responsive rounded native UI and can open the installed SMS app's composer through an explicit `ACTION_SENDTO` handoff. It requests **no SMS permissions**, cannot receive/read/send SMS itself, does not replace the default SMS app, and cannot determine whether the downstream app chooses SMS/MMS/RCS. A separate GitHub Actions job compiles the app and executes JVM unit tests. No phone, SIM, carrier, or delivery acceptance is implied.
+
+Build with Android SDK 36, JDK 17 and Gradle 8.13 using `gradle :app:assembleDebug :app:testDebugUnitTest` inside `android/`. **Do not install this preview as a default SMS handler.**
 
 ## Run locally
 
@@ -37,8 +43,8 @@ To test DATA, choose **Connect DATA**, enter the **origin** of a Matrix homeserv
 | DATA via existing Matrix homeserver | Limited unencrypted testing adapter |
 | End-to-end encrypted DATA | **Not implemented**; next security milestone |
 | RCS (carriers/providers) | **Not implemented**; requires legitimate access |
-| MMS and SMS | **Not implemented**; native Android role/permissions required |
-| Android/iOS/Windows/Linux/macOS apps | **Not implemented** |
+| MMS and SMS | Native Android preview **delegates text composition** to the installed system messaging app; no GoreeCloud carrier send/receive adapter yet |
+| Android/iOS/Windows/Linux/macOS apps | Android native developer preview source added; no on-device acceptance. Other native platforms not implemented |
 | Attachments, calls, multi-device, groups admin, backup, AI | **Not implemented** |
 
 See [architecture and gating](docs/ARCHITECTURE.md), [security posture](docs/SECURITY.md), and [the secure DATA acceptance plan](docs/DATA-E2EE-GATE.md).

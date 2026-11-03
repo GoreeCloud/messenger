@@ -39,3 +39,7 @@ For production E2EE technical acceptance see [DATA-E2EE-GATE.md](DATA-E2EE-GATE.
 ## Session cancellation and account switching
 
 The developer-preview UI now associates every connection attempt and room timeline read with a generation ticket. Disconnect closes the pending Matrix session, aborting its outstanding HTTP requests. Responses from an older connection or account are discarded rather than mutating a newly selected account; stale delivery callbacks also cannot set the new session's loading state. **Closing the client cannot undo events already accepted by a homeserver.** No security or production readiness claim is implied.
+
+## Native Android preview safety
+
+The native Android developer preview delegates text composition using `ACTION_SENDTO` to the device's existing SMS app. It requests no SMS permissions, reads no SMS databases, registers no SMS/MMS delivery receivers, has no network APIs or credential storage, and does not request to become the default SMS app. A recipient validator rejects URI-injection syntax and invalid numbers. The downstream messaging app controls transport selection, sending and storage; GoreeCloud does not attest to its security. No on-device permission, privacy or delivery audit has been performed.
