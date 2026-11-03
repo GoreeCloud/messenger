@@ -77,3 +77,7 @@ Headless Chromium now tests real same-origin Web Locks exclusivity and reuse plu
 ## Persistent Rust crypto store confidentiality (future-only)
 
 Matrix SDK documents that `initRustCrypto({useIndexedDB:true})` without a `storageKey` or `storagePassword` leaves the persistent store **unencrypted**. The unused secure-DATA bootstrap now requires a nonzero 32-byte external device key, passes a cloned buffer to the SDK, and zeroes that clone when closed or initialization fails. The source input remains owned by its caller. Secure device-key generation, encrypted key custody, recovery, and actual browser Rust store testing are **not implemented**. No product claims of encrypted local storage or E2EE are made.
+
+## Isolated persistent Matrix Rust browser-store test
+
+The separate CI-only Matrix Rust browser probe initializes `matrix-js-sdk@45.0.0` with an explicitly supplied synthetic storage key in Chromium IndexedDB, then closes and reopens that test store after navigation. The JS/WASM bundle is built from an integrity-pinned audited npm graph and served exclusively from loopback; all test databases are disposable. **No live access token or user messages** are involved. A successful local reopen does not prove a secure release key manager, production E2EE, key backup, multi-device recovery or actual encrypted send/decrypt.
