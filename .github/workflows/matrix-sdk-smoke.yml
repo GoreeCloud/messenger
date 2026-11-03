@@ -23,15 +23,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Resolve exact direct SDK version without running package scripts
-        run: npm install --package-lock-only --ignore-scripts --no-fund
       - name: Install locked SDK dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-fund
       - name: Audit production dependency graph (high and critical)
         run: npm audit --omit=dev --audit-level=high
       - name: Initialize actual Rust/WASM SDK crypto in Node memory
         run: npm run smoke
-      - name: Retain resolved lockfile for provenance review
+      - name: Retain verified committed lockfile for provenance review
         uses: actions/upload-artifact@v4
         with:
           name: matrix-sdk-45-probe-lockfile
