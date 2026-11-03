@@ -211,3 +211,80 @@ test("closing the session prevents further trust or recovery calls", async () =>
   await assert.rejects(s.inspectRecovery(), /closed/);
   await assert.rejects(s.inspectRoom("!r:example.test"), /closed/);
 });
+
+test("concurrent close callers wait for the same completed SDK shutdown", async () => {
+  let finishStop;
+  let stops = 0;
+  const env = fakeSdk({ client: {
+    async stopClient() {
+      stops++;
+      await new Promise(resolve => { finishStop = resolve; });
+      env.calls.push("stop-finished");
+    }
+  } });
+  const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  const a = s.close();
+  const b = s.close();
+  assert.equal(s.closed, true);
+  assert.equal(s.cryptoInitialized, false);
+  let aDone = false, bDone = false;
+  a.then(() => { aDone = true; });
+  b.then(() => { bDone = true; });
+  await Promise.resolve();
+  assert.equal(aDone, false);
+  assert.equal(bDone, false);
+  assert.equal(env.isLocked(), true, "Lease must remain held until client stops");
+  finishStop();
+  await Promise.all([a, b]);
+  assert.equal(stops, 1);
+  assert.equal(aDone, true);
+  assert.equal(bDone, true);
+  assert.equal(env.isLocked(), false);
+  assert.equal(env.calls.filter(x => x === "release").length, 1);
+});
+
+test("in-flight room membership cannot be reported trusted after close", async () => {
+  let finishMembers;
+  const env = fakeSdk({ client: {
+    async getJoinedRoomMembers() {
+      return await new Promise(resolve => { finishMembers = resolve; });
+    }
+  } });
+  const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  const inspection = s.inspectRoom("!encrypted:example.test");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof finishMembers, "function");
+  await s.close();
+  finishMembers({ joined: [
+    { user_id: goodIdentity.userId }, { user_id: "@bob:example.test" }
+  ] });
+  await assert.rejects(inspection, error => error.code === "SESSION_CLOSED");
+});
+
+test("in-flight recovery completion cannot report prior crypto state after close", async () => {
+  let finishBackup;
+  const env = fakeSdk({ crypto: {
+    async getKeyBackupInfo() {
+      return await new Promise(resolve => { finishBackup = resolve; });
+    }
+  } });
+  const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  const inspection = s.inspectRecovery();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof finishBackup, "function");
+  await s.close();
+  finishBackup({ version: "1" });
+  await assert.rejects(inspection, error => error.code === "SESSION_CLOSED");
+});
+
+test("shutdown releases the lease even if the real SDK stop rejects", async () => {
+  const env = fakeSdk({ client: {
+    async stopClient() { throw new Error("transport shutdown failed"); }
+  } });
+  const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  const a = s.close(), b = s.close();
+  await assert.rejects(a, /shutdown failed/);
+  await assert.rejects(b, /shutdown failed/);
+  assert.equal(env.isLocked(), false);
+  assert.equal(env.calls.filter(x => x === "release").length, 1);
+});
