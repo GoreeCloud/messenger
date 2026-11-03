@@ -20,7 +20,8 @@ const profile = mkdtempSync(join(tmpdir(), 'goreecloud-browser-'));
 const chrome = process.env.CHROME_BIN || (existsSync('/usr/bin/google-chrome')
   ? '/usr/bin/google-chrome' : existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : 'chromium');
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
+  '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' };
 
 /**
  * Hermetic Matrix Client-Server fixture: synthetic identities only.
@@ -209,6 +210,31 @@ try {
   await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
   assert.match(await evaluate("document.querySelector('#securityText').textContent"), /not encrypted/i);
   assert.equal(await evaluate("document.querySelectorAll('[data-filter]').length"), 5);
+  const appMetadata = await evaluate(`(async () => {
+    const link = document.querySelector('link[rel="manifest"]');
+    const icon = document.querySelector('link[rel="icon"][type="image/svg+xml"]');
+    if (!link || !icon) return { configured: false };
+    const response = await fetch(link.href, { cache: 'no-store' });
+    const data = await response.json();
+    const image = await fetch(new URL(data.icons[0].src, link.href));
+    return {
+      configured: response.ok && image.ok,
+      name: data.name,
+      mode: data.display,
+      scope: data.scope,
+      iconType: image.headers.get('content-type'),
+      iconSvg: (await image.text()).startsWith('<svg')
+    };
+  })()`);
+  assert.deepEqual(appMetadata, {
+    configured: true,
+    name: 'GoreeCloud Messenger',
+    mode: 'standalone',
+    scope: './',
+    iconType: 'image/svg+xml',
+    iconSvg: true
+  }, 'Web app manifest and shared native/web icon must load from origin');
+
 
   // This is a browser interaction, not a synthetic policy test.
   const notes = await evaluate(`(() => {
