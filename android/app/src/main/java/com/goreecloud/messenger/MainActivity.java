@@ -1,6 +1,7 @@
 package com.goreecloud.messenger;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.res.Configuration;
 import android.content.Intent;
@@ -11,6 +12,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputFilter;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -67,6 +69,10 @@ public final class MainActivity extends Activity {
     }
     private EditText recipient;
     private EditText message;
+    private final VolatileNotes localNotes = new VolatileNotes();
+    private EditText noteInput;
+    private LinearLayout notesList;
+    private TextView notesStatus;
 
     private int dp(float value) {
         return Math.round(getResources().getDisplayMetrics().density * value);
@@ -197,7 +203,104 @@ public final class MainActivity extends Activity {
         handoff.setOnClickListener(v -> openSystemComposer());
         add(composer, handoff, 18);
         add(composer, text(getString(R.string.handoff_note), 13, MUTED, false), 12);
+
+        // LOCAL mode is a real, native, in-memory note editor. It never
+        // touches Android SMS storage, network services or saved instance state.
+        LinearLayout notesCard = new LinearLayout(this);
+        notesCard.setOrientation(LinearLayout.VERTICAL);
+        notesCard.setPadding(dp(17), dp(19), dp(17), dp(19));
+        notesCard.setBackground(panel(RAISED, 26, OUTLINE));
+        add(content, notesCard, 18);
+        add(notesCard, text(getString(R.string.notes_heading), 21, PALE, true), 0);
+        add(notesCard, text(getString(R.string.notes_explainer), 13, MUTED, false), 9);
+        noteInput = field(getString(R.string.notes_entry_label),
+            getString(R.string.notes_hint),
+            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES, 3);
+        noteInput.setMaxLines(7);
+        noteInput.setFilters(new InputFilter[]{
+            new InputFilter.LengthFilter(VolatileNotes.MAX_LENGTH)
+        });
+        noteInput.setSaveEnabled(false);
+        noteInput.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
+        add(notesCard, noteInput, 14);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        add(notesCard, actions, 12);
+        Button save = new Button(this);
+        save.setText(R.string.notes_save);
+        save.setAllCaps(false);
+        save.setTextColor(ON_ACCENT);
+        save.setBackground(panel(ACCENT, 16, Color.TRANSPARENT));
+        save.setMinHeight(dp(48));
+        save.setOnClickListener(v -> saveLocalNote());
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(
+            0, dp(48), 1f);
+        actions.addView(save, saveParams);
+
+        Button clear = new Button(this);
+        clear.setText(R.string.notes_clear);
+        clear.setAllCaps(false);
+        clear.setTextColor(PALE);
+        clear.setBackground(panel(SURFACE, 16, OUTLINE));
+        clear.setMinHeight(dp(48));
+        clear.setOnClickListener(v -> confirmClearNotes());
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(
+            0, dp(48), 1f);
+        clearParams.leftMargin = dp(10);
+        actions.addView(clear, clearParams);
+
+        notesStatus = text("", 12, MUTED, true);
+        notesStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        add(notesCard, notesStatus, 16);
+        notesList = new LinearLayout(this);
+        notesList.setOrientation(LinearLayout.VERTICAL);
+        add(notesCard, notesList, 8);
+        renderLocalNotes();
+
         add(content, text(getString(R.string.footnote), 12, MUTED, false), 24);
+    }
+
+    private void saveLocalNote() {
+        try {
+            localNotes.add(noteInput.getText().toString());
+            noteInput.setText("");
+            renderLocalNotes();
+        } catch (IllegalArgumentException error) {
+            noteInput.setError(getString(R.string.notes_invalid));
+            noteInput.requestFocus();
+        }
+    }
+
+    private void renderLocalNotes() {
+        notesStatus.setText(getString(R.string.notes_count, localNotes.count()));
+        notesList.removeAllViews();
+        if (localNotes.count() == 0) {
+            add(notesList, text(getString(R.string.notes_empty), 14, MUTED, false), 0);
+            return;
+        }
+        for (String value : localNotes.snapshot()) {
+            TextView item = text(value, 15, PALE, false);
+            item.setTextIsSelectable(true);
+            item.setPadding(dp(14), dp(12), dp(14), dp(12));
+            item.setBackground(panel(SURFACE, 14, OUTLINE));
+            add(notesList, item, 9);
+        }
+    }
+
+    private void confirmClearNotes() {
+        if (localNotes.count() == 0) return;
+        new AlertDialog.Builder(this)
+            .setTitle(R.string.notes_clear_title)
+            .setMessage(R.string.notes_clear_confirm)
+            .setNegativeButton(android.R.string.cancel, (dialog, which) -> dialog.dismiss())
+            .setPositiveButton(R.string.notes_clear, (dialog, which) -> {
+                localNotes.clear();
+                noteInput.setText("");
+                renderLocalNotes();
+            }).show();
     }
 
     private void openSystemComposer() {

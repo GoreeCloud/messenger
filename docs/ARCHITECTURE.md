@@ -60,3 +60,7 @@ The dependency-free Chromium test (`scripts/browser-smoke.mjs`) now runs a synth
 ## SDK-backed secure DATA boundary (not yet connected)
 
 `src/secure-data.mjs` is an isolated, read-only bootstrap for a future trusted Matrix Rust SDK consumer. It owns one exclusive browser crypto-store lease and validates homeserver, account, device and secure storage before initializing Rust crypto. It intentionally does not import a third-party SDK, expose sends, decrypt messages or establish verified devices/recovery. The current plaintext web preview remains separate and cannot treat this module as crypto-verification evidence. See [bootstrap design](SECURE-DATA-SDK-BOOTSTRAP.md).
+
+## Both platform deliverables remain mandatory
+
+GoreeCloud Messenger has an independent responsive web application in `web/` and a **native Android Java application** in `android/`. Neither a browser shortcut nor an Android WebView is considered a replacement for the native Android app. The two clients share the GC UI semantic palette and honest protocol/security labels, but do not yet share durable message storage, authenticated DATA transport, or cellular integrations. Android's new native in-memory note list deliberately discards notes on Activity recreation and never persists them; web notes remain browser-tab-only. Build and validate each platform independently through its own CI checks. Do not infer Android carrier permission or production E2EE from web test fixtures.

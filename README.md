@@ -74,3 +74,12 @@ An optional [read-only Matrix Rust-crypto initialization boundary](docs/SECURE-D
 ### Browser Rust/IndexedDB compatibility probe (test-only)
 
 In addition to Node memory-mode Rust crypto, an [isolated pinned browser probe](integration/matrix-sdk-browser/README.md) now exercises real Matrix SDK crypto backed by temporary Chromium IndexedDB, including store reopening across navigation. It is not imported by the web app. The test uses a publicly known synthetic key; no real encryption keys, accounts or encrypted messaging have been implemented. See [E2EE release gates](docs/DATA-E2EE-GATE.md).
+
+## Two required first-party apps: Web and Android
+
+GoreeCloud Messenger maintains **both** its original browser app (`web/`) and its separate, native Android app (`android/`) in this repository. Neither is a substitute for the other.
+
+- **Web app:** responsive GC UI Foundations 1.0.1 interface with memory-only personal notes and explicitly consented plaintext Matrix DATA development rooms. The plaintext adapter now rechecks room encryption state **after** timeline fetch before showing returned messages and rejects control characters in access tokens. This reduces one race but cannot make plaintext confidential or atomic.
+- **Native Android app:** first-party Java Activity with native memory-only personal notes and an explicit SMS `ACTION_SENDTO` handoff. Notes are not saved to disk, synced, backed up, or preserved across Activity recreation; SMS/MMS/RCS are **not** sent or received by GoreeCloud. Android does not request dangerous SMS permissions or default-handler role.
+
+Both apps remain development previews. Dedicated web/Android production packaging, native Matrix secure DATA messaging, verified E2EE, default SMS/MMS role and authorized RCS integration are future acceptance milestones, not shipped features.
