@@ -1,0 +1,38 @@
+name: Browser interaction smoke
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "src/**"
+      - "scripts/browser-smoke.mjs"
+      - ".github/workflows/browser-smoke.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "src/**"
+      - "scripts/browser-smoke.mjs"
+      - ".github/workflows/browser-smoke.yml"
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify browser availability
+        run: command -v google-chrome || command -v chromium
+      - name: Exercise actual browser UI
+        run: node scripts/browser-smoke.mjs
+      - name: Attach synthetic test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: messenger-browser-smoke
+          path: artifacts/browser/
+          retention-days: 7
+          if-no-files-found: ignore
