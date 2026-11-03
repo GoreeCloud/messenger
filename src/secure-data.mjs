@@ -226,8 +226,10 @@ export class SecureDataBootstrap {
         const trust = await this.#checked(crypto.getUserVerificationStatus(userId));
         peers.push({
           userId,
-          verified: trust?.needsUserApproval !== true &&
-            trust?.known === true && trust?.isCrossSigningVerified?.() === true
+          // SDK UserVerificationStatus has needsUserApproval plus methods,
+          // not a "known" property. Missing shape must still fail closed.
+          verified: trust?.needsUserApproval === false &&
+            trust?.isCrossSigningVerified?.() === true
         });
       }
       assertOpen(this);

@@ -17,9 +17,16 @@ const client = sdk.createClient({
 try {
   assert.equal(typeof client.initRustCrypto, "function", "Rust crypto initialization missing");
   assert.equal(typeof client.getCrypto, "function", "Rust crypto API getter missing");
+  assert.equal(typeof client.getJoinedRoomMembers, "function",
+    "Real Matrix SDK room membership method is missing");
   await client.initRustCrypto({ useIndexedDB: false });
   const crypto = client.getCrypto();
   assert.ok(crypto, "Rust crypto did not produce a CryptoApi");
+  // The real SDK property must be writable and readable; a synthetic extra
+  // field would give misleading security assurance.
+  crypto.globalBlacklistUnverifiedDevices = true;
+  assert.equal(crypto.globalBlacklistUnverifiedDevices, true,
+    "SDK refused global unverified-device blacklist");
   for (const method of [
     "isEncryptionEnabledInRoom", "isCrossSigningReady",
     "isSecretStorageReady", "getActiveSessionBackupVersion",
