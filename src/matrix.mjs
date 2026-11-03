@@ -40,7 +40,10 @@ export class MatrixPlaintextSession {
     }
     if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
     this.#token = accessToken.trim();
-    this.#request = fetchImpl;
+    // Browser Window.fetch is an IDL method that requires a Window receiver.
+    // Calling it as `this.#request(...)` otherwise passes MatrixPlaintextSession
+    // as `this` and may throw "Illegal invocation". Keep injected mocks working.
+    this.#request = fetchImpl.bind(globalThis);
   }
 
   async #call(path, { method = "GET", body } = {}) {
