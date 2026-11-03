@@ -44,3 +44,7 @@ The current policy module requires a **cryptoVerified** signal in addition to av
 ### Required encrypted-at-rest crypto store key
 
 The official SDK's persistent Rust IndexedDB store is unencrypted when both `storageKey` and `storagePassword` are omitted. To prevent this unsafe default, `SecureDataBootstrap.open` now requires an externally provided nonzero 32-byte `storageKey` before acquiring its exclusive store lease, and passes a private copy to the SDK. The copy is cleared on close/failure. A verified device-key management and unlock/recovery flow is **still a blocking prerequisite**; do not derive crypto-store keys directly from Matrix access tokens, silently generate one-time keys, or store a cleartext key alongside its encrypted database. Reuse the exact key for the same device's crypto database across sessions.
+
+### Per-device crypto-store identity
+
+The future Matrix Rust IndexedDB bootstrap now passes a deterministic `cryptoDatabasePrefix` scoped to the validated homeserver origin, Matrix account and device ID. It requires a functioning secure browser SHA-256 implementation before opening the Web Locks lease, and does not silently fall back to the SDK's shared default database name. An account/device migration must verify the prior store and recovery keys; never rename or delete an existing crypto database without explicit safe migration and recovery tests. This prefix is opaque but **not a credential**.
