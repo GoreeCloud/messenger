@@ -3,11 +3,14 @@ import { MatrixPlaintextSession } from "../src/matrix.mjs";
 import { InMemoryOutbox } from "../src/outbox.mjs";
 import { reconcileTimeline } from "../src/timeline.mjs";
 import { SessionDrafts } from "../src/drafts.mjs";
+import { SessionEpoch } from "../src/session-epoch.mjs";
 
 const $ = id => document.getElementById(id);
 const drafts = new SessionDrafts();
+const connectionEpoch = new SessionEpoch();
+const timelineEpoch = new SessionEpoch();
 const state = {
-  session: null, outbox: null, userId: "", rooms: [], notes: [], messages: new Map(),
+  session: null, pendingSession: null, outbox: null, userId: "", rooms: [], notes: [], messages: new Map(),
   selected: "notes", filter: "ALL", query: "", loading: false,
   allowPlaintext: false, failures: new Map()
 };
@@ -153,16 +156,22 @@ async function loadMessages() {
   const room = selectedRoom();
   const session = state.session;
   if (!session || !room || room.encrypted !== "plaintext") return;
+  const loadTicket = timelineEpoch.next();
   state.loading = true; renderComposer();
   try {
     const messages = await session.readMessages(room, state.userId);
     // A disconnect or account switch must never populate the next session.
-    if (state.session === session && state.selected === room.id) {
+    if (timelineEpoch.isCurrent(loadTicket) && state.session === session && state.selected === room.id) {
       state.messages.set(room.id, reconcileTimeline(state.messages.get(room.id) || [], messages));
     }
-    if (state.session === session) announce("Updated Matrix messages");
-  } catch (error) { announce(error.message); }
-  finally { state.loading = false; render(); }
+    if (timelineEpoch.isCurrent(loadTicket) && state.session === session) announce("Updated Matrix messages");
+  } catch (error) {
+    if (timelineEpoch.isCurrent(loadTicket) && state.session === session) announce(error.message);
+  } finally {
+    if (timelineEpoch.isCurrent(loadTicket) && state.session === session) {
+      state.loading = false; render();
+    }
+  }
 }
 async function send() {
   const text = els.message.value;
@@ -209,7 +218,9 @@ async function transmit(room, message) {
       room.encrypted = "unknown";
     }
     announce(error.message + " · Retry uses the same transaction ID");
-  } finally { state.loading = false; render(); }
+  } finally {
+    if (state.outbox === outbox) { state.loading = false; render(); }
+  }
 }
 async function retryMessage(id) {
   const room = selectedRoom(); const message = (state.messages.get(room?.id) || []).find(m => m.id === id);
@@ -217,6 +228,10 @@ async function retryMessage(id) {
   await transmit(room, message);
 }
 function disconnect() {
+  connectionEpoch.next();
+  timelineEpoch.next();
+  state.pendingSession?.close();
+  state.pendingSession = null;
   state.outbox?.close();
   state.outbox = null;
   state.session?.close();
@@ -231,6 +246,7 @@ function disconnect() {
 async function connect(event) {
   event.preventDefault();
   if (state.loading) return;
+  const ticket = connectionEpoch.next();
   state.loading = true; $("connectButton").disabled = true;
   $("connectionStatus").textContent = "Authenticating and checking room security…";
   const homeserver = $("homeserverInput").value;
@@ -238,10 +254,19 @@ async function connect(event) {
   let next;
   try {
     next = new MatrixPlaintextSession({homeserver,accessToken:token});
+    state.pendingSession = next;
     const userId = await next.whoami();
+    if (!connectionEpoch.isCurrent(ticket)) return;
     const ids = await next.listRooms();
+    if (!connectionEpoch.isCurrent(ticket)) return;
     const rooms = [];
-    for (const id of ids) rooms.push(await next.inspectRoom(id));
+    for (const id of ids) {
+      if (!connectionEpoch.isCurrent(ticket)) return;
+      rooms.push(await next.inspectRoom(id));
+    }
+    if (!connectionEpoch.isCurrent(ticket)) return;
+    state.pendingSession = null;
+    timelineEpoch.next(); // discard prior account's in-flight room responses
     state.outbox?.close();
     state.session?.close();
     state.session = next; state.outbox = new InMemoryOutbox({ transport: next });
@@ -256,12 +281,17 @@ async function connect(event) {
     els.connection.hidden = true;
   } catch (error) {
     next?.close();
-    $("connectionStatus").textContent = error.message;
-    announce("Connection failed: " + error.message);
+    if (connectionEpoch.isCurrent(ticket)) {
+      $("connectionStatus").textContent = error.message;
+      announce("Connection failed: " + error.message);
+    }
   } finally {
-    $("tokenInput").value = "";
-    state.loading = false; $("connectButton").disabled = false; render();
-    if (state.session && selectedRoom()?.encrypted === "plaintext") void loadMessages();
+    if (state.pendingSession === next) state.pendingSession = null;
+    if (connectionEpoch.isCurrent(ticket)) {
+      $("tokenInput").value = "";
+      state.loading = false; $("connectButton").disabled = false; render();
+      if (state.session && selectedRoom()?.encrypted === "plaintext") void loadMessages();
+    }
   }
 }
 

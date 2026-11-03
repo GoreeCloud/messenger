@@ -35,3 +35,7 @@ For production E2EE technical acceptance see [DATA-E2EE-GATE.md](DATA-E2EE-GATE.
 - The volatile outbox now rejects malformed homeserver acknowledgments so they remain retriable with the same transaction ID, not silently classified as delivered.
 - `acquireCryptoStoreLease` is an unused **future integration safeguard** for cooperating tabs that would share a Matrix Rust crypto IndexedDB store. It does not establish E2EE, protect against a compromised browser, or provide crypto device verification.
 - Actual mobile/browser integration, E2EE, offline durable delivery, media, SMS/MMS/RCS and multi-device recovery remain unverified and unimplemented.
+
+## Session cancellation and account switching
+
+The developer-preview UI now associates every connection attempt and room timeline read with a generation ticket. Disconnect closes the pending Matrix session, aborting its outstanding HTTP requests. Responses from an older connection or account are discarded rather than mutating a newly selected account; stale delivery callbacks also cannot set the new session's loading state. **Closing the client cannot undo events already accepted by a homeserver.** No security or production readiness claim is implied.
