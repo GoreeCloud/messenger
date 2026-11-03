@@ -23,10 +23,10 @@ const dbPrefix = "goreecloud-messenger-v1-";
 const validToken = "synthetic-never-valid-token";
 const invalidToken = "synthetic-mismatch-device-token";
 
-async function open(accessToken, onCreate = () => {}, storeKey = key) {
+async function open(accessToken, onCreate = () => {}, storeKey = key, signal = null) {
   return SecureDataBootstrap.open({
     homeserver: location.origin, accessToken, userId: owner, deviceId: device,
-    storageKey: storeKey, createClient: options => {
+    storageKey: storeKey, signal, createClient: options => {
       const client = createClient(options);
       onCreate(client);
       return client;
@@ -40,6 +40,35 @@ async function run() {
   }
   if (!["first", "reopen"].includes(phase)) throw Error("Unexpected test phase");
   status("running", phase);
+
+  // The synthetic server holds whoami open so cancellation can happen
+  // after an actual Matrix HTTP request starts, but before crypto opens.
+  if (phase === "first") {
+    const controller = new AbortController();
+    const canceled = open("synthetic-slow-cancel-token", () => {}, key, controller.signal);
+    let began = false;
+    for (let n = 0; n < 80; n++) {
+      const probe = await fetch("/__test/slow-whoami-started");
+      const result = await probe.json();
+      if (result.started === true) { began = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    insist(began, "The delayed synthetic whoami request never started");
+    controller.abort();
+    let rejected = false;
+    try {
+      const session = await canceled;
+      await session.close();
+    } catch (error) {
+      rejected = error?.code === "SESSION_CANCELLED";
+    }
+    insist(rejected, "Cancelled in-flight whoami returned a crypto session");
+    const databases = (await indexedDB.databases()).map(db => db.name || "");
+    insist(!databases.some(name => name.startsWith(dbPrefix)),
+      "Cancelled login must not initialize a Rust crypto database");
+    const unlocked = await acquireCryptoStoreLease();
+    await unlocked.release();
+  }
 
   // The server returns an intentionally mismatched device for this synthetic
   // token. Crypto initialization MUST be rejected before any store opens.

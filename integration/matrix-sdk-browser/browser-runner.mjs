@@ -18,17 +18,30 @@ const chrome = process.env.CHROME_BIN || (existsSync("/usr/bin/google-chrome")
   ? "/usr/bin/google-chrome" : existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : "chromium");
 const types = { ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8", ".wasm": "application/wasm" };
+let slowWhoamiStarted = false;
 const server = createServer(async (req, res) => {
   try {
     const name = decodeURIComponent(new URL(req.url, "http://127.0.0.1").pathname);
+    if (name === "/__test/slow-whoami-started" && req.method === "GET") {
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ started: slowWhoamiStarted }));
+      return;
+    }
     if (name === "/_matrix/client/v3/account/whoami" && req.method === "GET") {
       const token = req.headers.authorization;
       if (token !== "Bearer synthetic-never-valid-token" &&
-          token !== "Bearer synthetic-mismatch-device-token") {
+          token !== "Bearer synthetic-mismatch-device-token" &&
+          token !== "Bearer synthetic-slow-cancel-token") {
         res.writeHead(401, { "Content-Type": "application/json",
           "Cache-Control": "no-store" });
         res.end(JSON.stringify({ errcode: "M_UNKNOWN_TOKEN" }));
         return;
+      }
+      if (token === "Bearer synthetic-slow-cancel-token") {
+        slowWhoamiStarted = true;
+        // A bounded delay proves AbortSignal handling during a real SDK
+        // whoami request; it does not cancel or modify a real Matrix account.
+        await sleep(400);
       }
       res.writeHead(200, { "Content-Type": "application/json",
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
