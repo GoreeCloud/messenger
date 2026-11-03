@@ -31,7 +31,7 @@ const fixture = {
   expectedToken: 'synthetic-test-token', credentialInUrl: false,
   rooms: ['!plain:localhost', '!sealed:localhost'],
   plainEncrypted: false, failNextPut: false, slowWhoami: false,
-  putAttempts: [], events: [{
+  putAttempts: [], seen: [], events: [{
     type: 'm.room.message', event_id: '$inbound', sender: '@peer:localhost',
     content: { msgtype: 'm.text', body: 'Synthetic inbound <img src=x onerror=alert(1)>' },
     origin_server_ts: 1000
@@ -43,6 +43,8 @@ function matrixResponse(res, status, body = {}) {
   res.end(JSON.stringify(body));
 }
 async function matrixFixtureRequest(req, res, path) {
+  fixture.seen.push({ method: req.method, path, authorized:
+    req.headers.authorization === 'Bearer ' + fixture.expectedToken });
   if (req.url.includes(fixture.expectedToken)) fixture.credentialInUrl = true;
   if (req.headers.authorization !== 'Bearer ' + fixture.expectedToken) {
     return matrixResponse(res, 401, { errcode: 'M_UNKNOWN_TOKEN' });
@@ -149,7 +151,9 @@ async function until(expression, expected = true) {
   const diagnostics = await evaluate(`({ url: location.href,
     ready: document.readyState, title: document.title,
     buttons: document.querySelectorAll('#conversationList button').length,
-    body: document.body?.innerText?.slice(0, 250) })`).catch(error => ({ error: error.message }));
+    body: document.body?.innerText?.slice(0, 250),
+    connection: document.getElementById('connectionStatus')?.textContent,
+    toast: document.getElementById('toast')?.textContent })`).catch(error => ({ error: error.message }));
   throw new Error('Browser condition not met: ' + expression +
     '; diagnostics=' + JSON.stringify(diagnostics));
 }
@@ -251,7 +255,12 @@ try {
     document.getElementById('connectForm').dispatchEvent(
       new Event('submit', { bubbles: true, cancelable: true }));
   })()`);
-  await until("document.getElementById('sidebarStatus').textContent.includes('Connected to Matrix')");
+  try {
+    await until("document.getElementById('sidebarStatus').textContent.includes('Connected to Matrix')");
+  } catch (error) {
+    console.error('Synthetic fixture request sequence:', JSON.stringify(fixture.seen));
+    throw error;
+  }
   await until("document.getElementById('timeline').textContent.includes('Synthetic inbound')");
   assert.equal(await evaluate("document.querySelector('#timeline img') === null"), true,
     'Matrix message bodies must be treated as text, never HTML');
