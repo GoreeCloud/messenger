@@ -52,3 +52,7 @@ A Matrix homeserver's state response is not itself sufficient proof of trustwort
 ## Native Android preview boundary
 
 `android/` uses Android Gradle Plugin 8.13.2 and an original native Java Activity. `Intent.ACTION_SENDTO` with a validated `smsto:` recipient hands composition to the installed SMS app. The delegated app independently controls send confirmation, SIM, transport and persistence; **GoreeCloud does not send or receive carrier messages**. No dangerous SMS permissions, default role request, SMS/MMS receivers, hidden APIs, or third-party code are present. See [Android developer preview](../android/README.md).
+
+## Hermetic browser-to-Matrix integration verification
+
+The dependency-free Chromium test (`scripts/browser-smoke.mjs`) now runs a synthetic loopback Matrix Client-Server fixture and tests the actual web interface through fetch, authentication, room state, plaintext read/send, simulated server failure, same-transaction retry, event-id reconciliation, XSS-safe rendering, encrypted-room refusal and stale session cancellation. This fixture is test-only; it does not implement a production homeserver. The browser-bound Matrix `fetch` receiver is explicitly bound to the global environment (see `tests/matrix.test.mjs`) to avoid a browser-only illegal invocation. Do not interpret fixture success as a live Matrix homeserver, cryptographic E2EE or mobile carrier acceptance.
