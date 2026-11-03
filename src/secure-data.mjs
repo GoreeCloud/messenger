@@ -21,6 +21,11 @@ export class SecureDataGateError extends Error {
 }
 
 const fail = (code, reason) => new SecureDataGateError(code, reason);
+function ensureNotCancelled(signal) {
+  if (signal?.aborted === true) {
+    throw fail("SESSION_CANCELLED", "Secure DATA initialization was cancelled");
+  }
+}
 function identity(value, prefix, label) {
   if (typeof value !== "string" || !value.startsWith(prefix) ||
       value.length < 4 || value.length > 255 || /[\s\u0000-\u001f\u007f]/u.test(value) ||
@@ -93,11 +98,17 @@ export class SecureDataBootstrap {
    */
   static async open({
     homeserver, accessToken, userId, deviceId, createClient, storageKey,
+    signal = null,
     acquireLease = acquireCryptoStoreLease,
     secureContext = globalThis.isSecureContext,
     indexedDB = globalThis.indexedDB,
     subtle = globalThis.crypto?.subtle
   } = {}) {
+    if (signal !== null && (typeof signal?.aborted !== "boolean" ||
+        typeof signal?.addEventListener !== "function")) {
+      throw fail("SIGNAL_INVALID", "A valid AbortSignal is required");
+    }
+    ensureNotCancelled(signal);
     const origin = validateHomeserver(homeserver);
     const account = identity(userId, "@", "user identity");
     const id = device(deviceId);
@@ -123,6 +134,7 @@ export class SecureDataBootstrap {
     // Hash the exact configured identity before opening any persistent store;
     // the server-issued whoami response is checked before initializing crypto.
     const cryptoDatabasePrefix = await scopedCryptoDatabase(origin, account, id, subtle);
+    ensureNotCancelled(signal);
 
     // The Web Locks guard protects the entire Rust WASM/IndexedDB lifetime.
     // It is acquired *before* creating a client so parallel tabs fail closed.
@@ -135,6 +147,7 @@ export class SecureDataBootstrap {
     const storeKey = Uint8Array.from(storageKey);
     let client;
     try {
+      ensureNotCancelled(signal);
       client = createClient({
         baseUrl: origin, accessToken: accessToken.trim(),
         userId: account, deviceId: id
@@ -151,13 +164,18 @@ export class SecureDataBootstrap {
       // the returned token identity. A mismatched token must never initialize
       // this device's crypto database.
       const who = await client.whoami();
+      ensureNotCancelled(signal);
       if (who?.user_id !== account || who?.device_id !== id) {
         throw fail("IDENTITY_MISMATCH", "Matrix token did not match the account and device");
       }
+      ensureNotCancelled(signal);
       await client.initRustCrypto({
         useIndexedDB: true, storageKey: storeKey,
         cryptoDatabasePrefix
       });
+      // Do not race SDK initialization with abort: the crypto store may still
+      // be writing. Await SDK completion before stopClient/lease cleanup.
+      ensureNotCancelled(signal);
       const crypto = client.getCrypto();
       for (const method of [
         "isEncryptionEnabledInRoom", "isCrossSigningReady",
@@ -172,6 +190,7 @@ export class SecureDataBootstrap {
         throw fail("CRYPTO_POLICY_UNAVAILABLE",
           "Unable to enforce the SDK unverified-device block");
       }
+      ensureNotCancelled(signal);
       return new SecureDataBootstrap(
         { homeserver: origin, userId: account, deviceId: id }, client, crypto, lease, storeKey
       );
