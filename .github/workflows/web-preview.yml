@@ -1,0 +1,54 @@
+name: Web app development preview package
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "src/**"
+      - ".github/workflows/web-preview.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "src/**"
+      - ".github/workflows/web-preview.yml"
+permissions:
+  contents: read
+jobs:
+  web-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate web source and fail-closed security tests
+        run: |
+          npm run check
+          npm test
+      - name: Assemble only reviewed first-party web runtime files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p package/src
+          cp -R web package/web
+          cp src/protocols.mjs src/matrix.mjs src/outbox.mjs \
+             src/timeline.mjs src/drafts.mjs src/session-epoch.mjs package/src/
+          cp web/README.md package/README.md
+          test -f package/web/index.html
+          test -f package/web/manifest.webmanifest
+          test -f package/web/foundations/gc-ui-tokens.v1.0.1.css
+          test -f package/src/matrix.mjs
+          test -f package/README.md
+          if find package -type f \( -name '*.key' -o -name '.env*' -o -name '*.pem' \) | grep -q .; then
+            echo 'Rejected credential-like file in web preview package'
+            exit 1
+          fi
+          find package -type f | sort
+      - name: Upload short-lived self-hostable web app preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: goreecloud-messenger-web-preview
+          path: package/
+          retention-days: 7
+          if-no-files-found: error
