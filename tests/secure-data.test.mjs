@@ -431,3 +431,88 @@ test("silently ignored unverified-device SDK policy cannot initialize secure DAT
   assert.equal(env.calls.filter(call => call === "stop").length, 1,
     "Failed crypto policy must shut down the SDK client");
 });
+
+test("already cancelled secure DATA initialization never acquires a crypto lease", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const env = fakeSdk();
+  await assert.rejects(
+    SecureDataBootstrap.open({ ...goodIdentity, ...env, signal: controller.signal }),
+    error => error.code === "SESSION_CANCELLED"
+  );
+  assert.deepEqual(env.calls, []);
+});
+
+test("invalid cancellation signal fails closed before touching SDK or storage", async () => {
+  const env = fakeSdk();
+  await assert.rejects(
+    SecureDataBootstrap.open({ ...goodIdentity, ...env, signal: { aborted: false } }),
+    error => error.code === "SIGNAL_INVALID"
+  );
+  assert.deepEqual(env.calls, []);
+});
+
+test("cancellation while hashing store identity prevents lease or SDK initialization", async () => {
+  let finishHash;
+  const controller = new AbortController();
+  const env = fakeSdk();
+  const task = SecureDataBootstrap.open({
+    ...goodIdentity, ...env, signal: controller.signal,
+    subtle: { async digest() {
+      return await new Promise(resolve => { finishHash = resolve; });
+    } }
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof finishHash, "function");
+  controller.abort();
+  finishHash(new Uint8Array(32).buffer);
+  await assert.rejects(task, error => error.code === "SESSION_CANCELLED");
+  assert.deepEqual(env.calls, []);
+});
+
+test("cancellation during whoami stops SDK without creating crypto database", async () => {
+  let finishWhoami;
+  const controller = new AbortController();
+  const env = fakeSdk({ client: {
+    async whoami() {
+      return await new Promise(resolve => { finishWhoami = resolve; });
+    }
+  } });
+  const task = SecureDataBootstrap.open({
+    ...goodIdentity, ...env, signal: controller.signal
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof finishWhoami, "function");
+  assert.equal(env.isLocked(), true);
+  controller.abort();
+  finishWhoami({ user_id: goodIdentity.userId, device_id: goodIdentity.deviceId });
+  await assert.rejects(task, error => error.code === "SESSION_CANCELLED");
+  assert.equal(env.calls.filter(x => Array.isArray(x) && x[0] === "rust-crypto").length, 0);
+  assert.equal(env.calls.filter(x => x === "stop").length, 1);
+  assert.equal(env.isLocked(), false);
+});
+
+test("cancellation during Rust initialization waits for SDK completion before releasing store", async () => {
+  let finishCrypto;
+  const controller = new AbortController();
+  const env = fakeSdk({ client: {
+    async initRustCrypto(options) {
+      env.calls.push(["rust-crypto", options.useIndexedDB, options.storageKey]);
+      return await new Promise(resolve => { finishCrypto = resolve; });
+    }
+  } });
+  const task = SecureDataBootstrap.open({
+    ...goodIdentity, ...env, signal: controller.signal
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(typeof finishCrypto, "function");
+  controller.abort();
+  assert.equal(env.isLocked(), true,
+    "Never release lock while Rust crypto initialization remains in flight");
+  finishCrypto();
+  await assert.rejects(task, error => error.code === "SESSION_CANCELLED");
+  assert.equal(env.isLocked(), false);
+  assert.equal(env.calls.filter(x => x === "stop").length, 1);
+  const key = env.calls.find(x => Array.isArray(x) && x[0] === "rust-crypto")[2];
+  assert.ok(key.every(byte => byte === 0), "Failed initialization must wipe the private copy");
+});
