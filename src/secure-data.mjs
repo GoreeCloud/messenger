@@ -182,7 +182,7 @@ export class SecureDataBootstrap {
     if (unexpectedPeerLists.length) {
       return blocked("Caller-provided recipient lists are not accepted");
     }
-    if (typeof roomId !== "string" || !/^![^:\\s]+:[^\\s]+$/u.test(roomId) ||
+    if (typeof roomId !== "string" || !/^![^:\s]+:[^\s]+$/u.test(roomId) ||
         roomId.length > 255) {
       return blocked("A valid Matrix room identifier is required");
     }
