@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated parity map from GC UI Foundations v1.0.1 semantic CSS; do not hand-edit. -->
+<resources>
+    <color name="gc_canvas">#ECF0F8</color>
+    <color name="gc_surface">#F9FAFD</color>
+    <color name="gc_raised">#FFFFFF</color>
+    <color name="gc_tonal">#E5EBF6</color>
+    <color name="gc_text">#20243A</color>
+    <color name="gc_muted">#5F657B</color>
+    <color name="gc_outline">#8990A7</color>
+    <color name="gc_primary">#087C8D</color>
+    <color name="gc_on_primary">#FFFFFF</color>
+    <color name="gc_secondary">#4C5F8B</color>
+    <color name="gc_warning">#875500</color>
+    <color name="gc_tertiary">#8054A0</color>
+</resources>

@@ -2,6 +2,7 @@ package com.goreecloud.messenger;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.res.Configuration;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Insets;
@@ -14,6 +15,7 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -27,11 +29,42 @@ import android.widget.Toast;
  * do not request the default SMS role or dangerous telephony permissions.
  */
 public final class MainActivity extends Activity {
-    private static final int SURFACE = Color.rgb(16, 25, 47);
-    private static final int BACKGROUND = Color.rgb(7, 13, 29);
-    private static final int ACCENT = Color.rgb(57, 142, 241);
-    private static final int PALE = Color.rgb(233, 241, 254);
-    private static final int MUTED = Color.rgb(171, 188, 212);
+    // Semantic values come from GC UI Foundations v1.0.1-generated
+    // Android light/dark resources; see android/scripts/check-gc-ui-token-mapping.py.
+    private int SURFACE, RAISED, TONAL, BACKGROUND, ACCENT, ON_ACCENT;
+    private int PALE, MUTED, OUTLINE, SECONDARY, WARNING, TERTIARY;
+
+    private void configureTheme() {
+        BACKGROUND = getColor(R.color.gc_canvas);
+        SURFACE = getColor(R.color.gc_surface);
+        RAISED = getColor(R.color.gc_raised);
+        TONAL = getColor(R.color.gc_tonal);
+        PALE = getColor(R.color.gc_text);
+        MUTED = getColor(R.color.gc_muted);
+        OUTLINE = getColor(R.color.gc_outline);
+        ACCENT = getColor(R.color.gc_primary);
+        ON_ACCENT = getColor(R.color.gc_on_primary);
+        SECONDARY = getColor(R.color.gc_secondary);
+        WARNING = getColor(R.color.gc_warning);
+        TERTIARY = getColor(R.color.gc_tertiary);
+
+        getWindow().setStatusBarColor(BACKGROUND);
+        getWindow().setNavigationBarColor(BACKGROUND);
+        boolean lightMode = (getResources().getConfiguration().uiMode
+            & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
+        if (Build.VERSION.SDK_INT >= 30) {
+            WindowInsetsController controller = getWindow().getInsetsController();
+            if (controller != null) {
+                int bars = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                    | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(lightMode ? bars : 0, bars);
+            }
+        } else {
+            int bars = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            getWindow().getDecorView().setSystemUiVisibility(lightMode ? bars : 0);
+        }
+    }
     private EditText recipient;
     private EditText message;
 
@@ -69,11 +102,11 @@ public final class MainActivity extends Activity {
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackground(panel(SURFACE, 16, 0xFF293955));
+        card.setBackground(panel(SURFACE, 18, OUTLINE));
 
         TextView mark = text(title, 16, tint, true);
         mark.setGravity(Gravity.CENTER);
-        mark.setBackground(panel(0xFF1B2D4B, 12, Color.TRANSPARENT));
+        mark.setBackground(panel(TONAL, 12, Color.TRANSPARENT));
         card.addView(mark, new LinearLayout.LayoutParams(dp(45), dp(45)));
 
         TextView line = text(description, 13, PALE, false);
@@ -95,14 +128,13 @@ public final class MainActivity extends Activity {
         input.setHint(hint);
         input.setContentDescription(label);
         input.setPadding(dp(17), dp(14), dp(17), dp(14));
-        input.setBackground(panel(0xFF101B33, 14, 0xFF324765));
+        input.setBackground(panel(RAISED, 12, OUTLINE));
         return input;
     }
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(BACKGROUND);
-        getWindow().setNavigationBarColor(BACKGROUND);
+        configureTheme();
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -122,7 +154,7 @@ public final class MainActivity extends Activity {
             });
         }
 
-        TextView eyebrow = text(getString(R.string.preview), 12, 0xFF76D6FF, true);
+        TextView eyebrow = text(getString(R.string.preview), 12, ACCENT, true);
         eyebrow.setLetterSpacing(0.12f);
         add(content, eyebrow, 6);
         add(content, text(getString(R.string.headline), 29, PALE, true), 13);
@@ -131,15 +163,15 @@ public final class MainActivity extends Activity {
         TextView protocolHeading = text(getString(R.string.protocol_heading), 12, MUTED, true);
         protocolHeading.setLetterSpacing(0.11f);
         add(content, protocolHeading, 29);
-        protocol(content, "S", getString(R.string.sms_status), 0xFF7CC7FF);
-        protocol(content, "M", getString(R.string.mms_status), 0xFFFFC180);
-        protocol(content, "R", getString(R.string.rcs_status), 0xFFAB9FFB);
-        protocol(content, "D", getString(R.string.data_status), 0xFF81E2C2);
+        protocol(content, "S", getString(R.string.sms_status), SECONDARY);
+        protocol(content, "M", getString(R.string.mms_status), WARNING);
+        protocol(content, "R", getString(R.string.rcs_status), TERTIARY);
+        protocol(content, "D", getString(R.string.data_status), ACCENT);
 
         LinearLayout composer = new LinearLayout(this);
         composer.setOrientation(LinearLayout.VERTICAL);
         composer.setPadding(dp(17), dp(19), dp(17), dp(19));
-        composer.setBackground(panel(0xFF13223C, 23, 0xFF304869));
+        composer.setBackground(panel(RAISED, 26, OUTLINE));
         add(content, composer, 24);
 
         add(composer, text(getString(R.string.compose_heading), 21, PALE, true), 0);
@@ -159,9 +191,9 @@ public final class MainActivity extends Activity {
         handoff.setText(getString(R.string.handoff));
         handoff.setAllCaps(false);
         handoff.setTextSize(16);
-        handoff.setTextColor(Color.WHITE);
+        handoff.setTextColor(ON_ACCENT);
         handoff.setMinHeight(dp(52));
-        handoff.setBackground(panel(ACCENT, 16, Color.TRANSPARENT));
+        handoff.setBackground(panel(ACCENT, 18, Color.TRANSPARENT));
         handoff.setOnClickListener(v -> openSystemComposer());
         add(composer, handoff, 18);
         add(composer, text(getString(R.string.handoff_note), 13, MUTED, false), 12);
