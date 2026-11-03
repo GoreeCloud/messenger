@@ -40,3 +40,7 @@ Concurrent calls to `close()` now await the **same** client shutdown and exclusi
 ## SDK 45 verification-status compatibility
 
 The read-only inspector now uses exactly the supported `UserVerificationStatus` contract: `needsUserApproval === false` and `isCrossSigningVerified() === true`. It does **not** invent or require a `known` property. Missing SDK methods or undefined approval fields fail closed. This only describes **user identity** verification, not per-device trust; all sends remain disabled. The isolated real-SDK smoke also validates `getJoinedRoomMembers` and the writable `globalBlacklistUnverifiedDevices` property. See https://matrix-org.github.io/matrix-js-sdk/classes/crypto-api.UserVerificationStatus.html and https://matrix-org.github.io/matrix-js-sdk/interfaces/crypto-api.CryptoApi.html .
+
+## Real browser primitive checks
+
+The existing Chromium smoke now imports the **unused** `acquireCryptoStoreLease` helper in a secure loopback origin and exercises the browser's actual `navigator.locks` manager: one exclusive owner holds the lock, a concurrent request is refused, and the lock becomes available again after release. It also writes a **synthetic marker only** to a disposable IndexedDB database, reloads the page, verifies persistence, and deletes the database. This verifies browser primitives and cleanup, **not** the actual Matrix Rust IndexedDB crypto store, encryption, a two-tab race, or recovery. The future SDK browser-bundle integration and device acceptance remain open.
