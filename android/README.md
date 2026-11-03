@@ -10,6 +10,7 @@ This directory contains an original Android Activity written in Java, displaying
 - `gradle :app:assembleDebug :app:testDebugUnitTest` from this directory, with the Android SDK installed.
 - `.github/workflows/android-preview.yml` builds and runs Java unit tests on pushes and PRs touching Android files.
 - The native UI and handoff require **real-device tests**. Compiling or running unit tests is not proof of device delivery.
+- CI additionally runs Android lint and publishes a **short-lived debug APK artifact** for authorized testers. Download from the successful Android native preview workflow. The APK is unsigned for production release (debug-signed by the Android SDK), not approved for app stores and not a replacement default SMS handler.
 
 No Gradle wrapper binary is checked in. Use a trusted local Gradle installation or the pinned GitHub Actions setup. Do not download or execute unfamiliar wrapper binaries.
 

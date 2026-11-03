@@ -33,6 +33,13 @@ jobs:
           "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --version
           yes | "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null || true
           "$SDK_MANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36" "build-tools;35.0.0"
-      - name: Compile native preview and run JVM tests
+      - name: Compile native preview, run JVM tests and Android lint
         working-directory: android
-        run: gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace
+        run: gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
+      - name: Upload debug APK for device validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: goreecloud-messenger-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: error
