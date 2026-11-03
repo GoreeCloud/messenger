@@ -29,6 +29,12 @@ function fakeSdk(overrides = {}) {
     async whoami() { calls.push("whoami"); return { user_id: goodIdentity.userId, device_id: goodIdentity.deviceId }; },
     async initRustCrypto(options) { calls.push(["rust-crypto", options.useIndexedDB]); },
     getCrypto() { calls.push("get-crypto"); return crypto; },
+    async getJoinedRoomMembers() {
+      calls.push("joined-members");
+      return { joined: [
+        { user_id: goodIdentity.userId }, { user_id: "@bob:example.test" }
+      ] };
+    },
     async stopClient() { calls.push("stop"); },
     ...overrides.client
   };
@@ -137,25 +143,65 @@ test("untrusted or missing backups never become recovery-ready", async () => {
     await s.close();
   }
 });
-test("room inspection fails closed for unencrypted rooms and changed peer identities", async () => {
+test("room inspection uses SDK membership rather than caller-supplied peer lists", async () => {
   const env = fakeSdk({ crypto: {
     async isEncryptionEnabledInRoom(room) { return room !== "!plain:example.test"; },
     async getUserVerificationStatus(user) {
       return { known: true, needsUserApproval: user === "@rotated:example.test",
         isCrossSigningVerified() { return true; } };
     }
+  }, client: {
+    async getJoinedRoomMembers() {
+      return { joined: [
+        { user_id: goodIdentity.userId },
+        { user_id: "@bob:example.test" },
+        { user_id: "@rotated:example.test" }
+      ] };
+    }
   }});
   const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
-  const plain = await s.inspectRoom("!plain:example.test", ["@bob:example.test"]);
-  assert.equal(plain.encryptionReported, false);
-  assert.equal(plain.canSend, false);
-  const rotated = await s.inspectRoom("!secure:example.test", ["@rotated:example.test"]);
-  assert.equal(rotated.encryptionReported, true);
-  assert.equal(rotated.verifiedIdentities, false);
-  assert.equal(rotated.canSend, false);
-  const checked = await s.inspectRoom("!secure:example.test", ["@bob:example.test"]);
-  assert.equal(checked.verifiedIdentities, true);
-  assert.equal(checked.canSend, false, "Verified user is not enough to attest recipient devices");
+  assert.equal((await s.inspectRoom("!plain:example.test")).encryptionReported, false);
+  assert.match((await s.inspectRoom("!secure:example.test",
+    ["@bob:example.test"])).reason, /Caller-provided/);
+  const status = await s.inspectRoom("!secure:example.test");
+  assert.equal(status.verifiedIdentities, false,
+    "An omitted changed participant must not be excluded from the verified state");
+  assert.equal(status.roomMemberCount, 3);
+  assert.equal(status.peers.length, 2);
+  assert.equal(status.canSend, false);
+  await s.close();
+});
+test("room with fully verified user identities remains send-blocked", async () => {
+  const env = fakeSdk();
+  const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  const state = await s.inspectRoom("!secure:example.test");
+  assert.equal(state.verifiedIdentities, true);
+  assert.equal(state.roomMemberCount, 2);
+  assert.equal(state.canSend, false, "Peer devices have not been verified");
+  await s.close();
+});
+test("missing or malicious membership, own-user omission and API errors fail closed", async () => {
+  for (const joined of [
+    null, [], [{ user_id: "@bob:example.test" }, { user_id: "@carol:example.test" }],
+    [{ user_id: goodIdentity.userId }, { user_id: "@invalid" }],
+    [{ user_id: goodIdentity.userId }]
+  ]) {
+    const env = fakeSdk({ client: {
+      async getJoinedRoomMembers() { return { joined }; }
+    }});
+    const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+    const status = await s.inspectRoom("!secure:example.test");
+    assert.equal(status.canSend, false);
+    assert.notEqual(status.verifiedIdentities, true);
+    await s.close();
+  }
+  const env = fakeSdk({ client: {
+    async getJoinedRoomMembers() { throw new Error("untrusted server response"); }
+  }});
+  const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  const state = await s.inspectRoom("!secure:example.test");
+  assert.equal(state.canSend, false);
+  assert.doesNotMatch(state.reason, /untrusted server/);
   await s.close();
 });
 test("closing the session prevents further trust or recovery calls", async () => {
@@ -163,5 +209,5 @@ test("closing the session prevents further trust or recovery calls", async () =>
   const s = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
   await s.close();
   await assert.rejects(s.inspectRecovery(), /closed/);
-  await assert.rejects(s.inspectRoom("!r:example.test", ["@bob:example.test"]), /closed/);
+  await assert.rejects(s.inspectRoom("!r:example.test"), /closed/);
 });

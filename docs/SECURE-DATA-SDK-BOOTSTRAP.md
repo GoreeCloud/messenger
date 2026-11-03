@@ -28,3 +28,7 @@ Run `npm run check` and `npm test`. The source module is intentionally dormant a
 ## Pinned SDK probe provenance
 
 `integration/matrix-sdk-smoke/package.json` requires exact `matrix-js-sdk@45.0.0`. Its `package-lock.json` contains 16 transitive/direct installed package records with specific integrity hashes, including `@matrix-org/matrix-sdk-crypto-wasm@18.9.0`. The CI runs `npm ci --ignore-scripts`, `npm audit --omit=dev --audit-level=high` and the Node Rust/WASM API probe. This dependency graph is **test-only**; no browser bundle or live secure messaging integration has been approved.
+
+## Room membership trust boundary
+
+The inspector now reads `getJoinedRoomMembers(roomId)` from the injected official Matrix SDK and checks **all** reported joined user identities, including its own account. Caller-supplied peer lists are explicitly refused so a caller cannot omit unverified users and mislabel the result. Missing/malformed responses or identity changes fail closed. It still does **not** enumerate every device, establish real server honesty, or permit any message to be sent. A malicious server can misreport membership; any production secure path must combine membership, device-key verification, identity pinning and actual encrypted roundtrips.

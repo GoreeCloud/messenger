@@ -65,3 +65,7 @@ An isolated, unused `SecureDataBootstrap` guards future Matrix Rust SDK initiali
 ## Isolated Rust/WASM dependency compatibility test
 
 A separate test-only Node 22 workspace under `integration/matrix-sdk-smoke/` installs a pinned `matrix-js-sdk@45.0.0` dependency graph from a committed npm lockfile with integrity hashes and lifecycle scripts disabled. Its CI runs a high/critical dependency audit and initializes the real Rust/WASM crypto backend with a synthetic identity in an ephemeral in-memory store. These checks do not prove vulnerability freedom, authenticated server behavior, persistent browser crypto-store safety, verified devices or a working encrypted conversation. The web and Android applications still do not import or ship the SDK. The stable release remains blocked by GitHub issue #2.
+
+## Read-only room membership identity checks
+
+The SDK bootstrap's future E2EE room inspector now fetches the joined member list from the SDK rather than trusting caller-supplied recipients, and requires the authenticated self identity plus every reported peer to have expected verification status. Malformed or incomplete membership is blocked. This cannot establish real device-key trust or a secure encrypted conversation, and every send is still disabled.
