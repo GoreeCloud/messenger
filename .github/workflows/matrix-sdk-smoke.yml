@@ -1,0 +1,40 @@
+name: Matrix SDK crypto compatibility probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - "integration/matrix-sdk-smoke/**"
+      - ".github/workflows/matrix-sdk-smoke.yml"
+  pull_request:
+    paths:
+      - "integration/matrix-sdk-smoke/**"
+      - ".github/workflows/matrix-sdk-smoke.yml"
+permissions:
+  contents: read
+jobs:
+  matrix-rust-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: integration/matrix-sdk-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Resolve exact direct SDK version without running package scripts
+        run: npm install --package-lock-only --ignore-scripts --no-fund
+      - name: Install locked SDK dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-fund
+      - name: Audit production dependency graph (high and critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Initialize actual Rust/WASM SDK crypto in Node memory
+        run: npm run smoke
+      - name: Retain resolved lockfile for provenance review
+        uses: actions/upload-artifact@v4
+        with:
+          name: matrix-sdk-45-probe-lockfile
+          path: integration/matrix-sdk-smoke/package-lock.json
+          retention-days: 7
+          if-no-files-found: error
