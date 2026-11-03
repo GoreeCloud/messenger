@@ -9,6 +9,23 @@ const $ = id => document.getElementById(id);
 const drafts = new SessionDrafts();
 const connectionEpoch = new SessionEpoch();
 const timelineEpoch = new SessionEpoch();
+/**
+ * Small first-party bridge for GC UI stable CSS *tokens only*.
+ * The full GC UI theme controller/components are not installed.
+ * Theme attributes are in volatile tab state; no storage or tracking.
+ */
+const prefersLight = window.matchMedia("(prefers-color-scheme: light)");
+const prefersContrast = window.matchMedia("(prefers-contrast: more)");
+function syncGCUITheme() {
+  const root = document.documentElement;
+  const selected = root.dataset.theme;
+  root.dataset.gcMode = selected === "light" || (selected !== "dark" && prefersLight.matches)
+    ? "light" : "dark";
+  root.dataset.gcContrast = prefersContrast.matches ? "high" : "standard";
+}
+prefersLight.addEventListener?.("change", syncGCUITheme);
+prefersContrast.addEventListener?.("change", syncGCUITheme);
+syncGCUITheme();
 const state = {
   session: null, pendingSession: null, outbox: null, userId: "", rooms: [], notes: [], messages: new Map(),
   selected: "notes", filter: "ALL", query: "", loading: false,
@@ -336,6 +353,7 @@ $("plaintextConsent").addEventListener("change", e => {
 $("refreshButton").addEventListener("click", () => void loadMessages());
 $("themeToggle").addEventListener("click", () => {
   document.documentElement.dataset.theme =
-    document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.gcMode === "light" ? "dark" : "light";
+  syncGCUITheme();
 });
 render();
