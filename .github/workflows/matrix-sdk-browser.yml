@@ -4,10 +4,16 @@ on:
     branches: [main]
     paths:
       - "integration/matrix-sdk-browser/**"
+      - "src/secure-data.mjs"
+      - "src/crypto-store-lease.mjs"
+      - "src/matrix.mjs"
       - ".github/workflows/matrix-sdk-browser.yml"
   pull_request:
     paths:
       - "integration/matrix-sdk-browser/**"
+      - "src/secure-data.mjs"
+      - "src/crypto-store-lease.mjs"
+      - "src/matrix.mjs"
       - ".github/workflows/matrix-sdk-browser.yml"
 permissions:
   contents: read
@@ -29,7 +35,7 @@ jobs:
         run: npm audit --audit-level=high
       - name: Build test-only browser SDK/WASM assets
         run: npm run build
-      - name: Test actual Rust IndexedDB persistence and reopen in Chromium
+      - name: Test guarded Rust IndexedDB identity, lock, persistence and reopen in Chromium
         run: npm run smoke
       - name: Preserve dependency lockfile for review
         if: always()
