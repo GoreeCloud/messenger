@@ -53,3 +53,7 @@ The web preview now declares a restrictive **HTML meta Content-Security-Policy**
 ## Browser Matrix test coverage and residual limits
 
 The actual Chromium UI is tested against an isolated synthetic loopback homeserver, including failure/retry transactions, plaintext consent, token clearing, encrypted-room lockout, stale login cancellation, and an HTML-looking text payload that must not render as DOM markup. These tests do not exchange real secrets or messages. The Matrix client's supplied fetch method is bound correctly for browser globals. The mock is **not** a standards conformance test, independent penetration test or substitute for end-to-end encrypted multi-device testing; plaintext DATA remains unsuitable for confidential communications.
+
+## Conservative DATA labels and room revocation
+
+An encrypted Matrix room's state is now labeled **encryption reported**, not verified end-to-end encryption; this preview does not validate cryptographic identities. If a timeline fetch detects a changed encryption state or receives a 401/403 response, the room's cached plaintext eligibility becomes unknown, its timeline is hidden, and future sends are blocked pending a new connection and security inspection. A synthetic Chromium integration test checks these behaviors. This does not establish genuine E2EE support or eliminate the non-atomic plaintext security-state race.

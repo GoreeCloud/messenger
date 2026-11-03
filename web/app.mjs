@@ -46,7 +46,7 @@ function dateLabel(ts) {
 }
 function securityFor(room) {
   if (!room) return formatSecurity("LOCAL", false);
-  if (room.encrypted === "encrypted") return "E2EE room · locked (crypto not configured)";
+  if (room.encrypted === "encrypted") return "Encryption reported · locked (crypto not configured)";
   if (room.encrypted === "unknown") return "Security unknown · blocked";
   return formatSecurity("DATA", false) + " · homeserver can read content";
 }
@@ -130,7 +130,7 @@ function renderComposer() {
   const unlocked = notes || (room.encrypted === "plaintext" && state.allowPlaintext);
   els.send.disabled = state.loading || !isMatching || !unlocked;
   $("routeStatus").textContent = !isMatching ? "Selected transport unavailable for this conversation" :
-    notes ? "On-device only" : room.encrypted !== "plaintext" ? "Locked · no crypto support" :
+    notes ? "This tab only · not backed up" : room.encrypted !== "plaintext" ? "Locked · no crypto support" :
     state.allowPlaintext ? "Plaintext DATA · consent enabled" : "Plaintext DATA blocked · consent required";
   $("composeHelp").textContent = notes
     ? "Notes are in tab memory only; refresh closes them. Enter to save · Shift+Enter for a newline."
@@ -166,7 +166,15 @@ async function loadMessages() {
     }
     if (timelineEpoch.isCurrent(loadTicket) && state.session === session) announce("Updated Matrix messages");
   } catch (error) {
-    if (timelineEpoch.isCurrent(loadTicket) && state.session === session) announce(error.message);
+    if (timelineEpoch.isCurrent(loadTicket) && state.session === session) {
+      // Changed security or revoked room access invalidates cached plaintext.
+      // A locked room hides prior events until a new verified session inspection.
+      if (error?.status === 401 || error?.status === 403 ||
+          /Room encryption changed or cannot be verified/.test(error?.message || "")) {
+        room.encrypted = "unknown";
+      }
+      announce(error.message);
+    }
   } finally {
     if (timelineEpoch.isCurrent(loadTicket) && state.session === session) {
       state.loading = false; render();
@@ -280,6 +288,7 @@ async function connect(event) {
     $("connectionStatus").textContent = "Connected as " + userId + " · " + rooms.length + " rooms inspected";
     announce("Connected. Unencrypted DATA requires separate explicit consent.");
     els.connection.hidden = true;
+    $("connectToggle").focus();
   } catch (error) {
     next?.close();
     if (connectionEpoch.isCurrent(ticket)) {

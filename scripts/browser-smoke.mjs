@@ -30,7 +30,7 @@ const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
 const fixture = {
   expectedToken: 'synthetic-test-token', credentialInUrl: false,
   rooms: ['!plain:localhost', '!sealed:localhost'],
-  plainEncrypted: false, failNextPut: false, slowWhoami: false,
+  plainEncrypted: false, forbidPlainState: false, failNextPut: false, slowWhoami: false,
   putAttempts: [], seen: [], events: [{
     type: 'm.room.message', event_id: '$inbound', sender: '@peer:localhost',
     content: { msgtype: 'm.text', body: 'Synthetic inbound <img src=x onerror=alert(1)>' },
@@ -59,6 +59,7 @@ async function matrixFixtureRequest(req, res, path) {
   const plain = path.startsWith('rooms/!plain:localhost/');
   const sealed = path.startsWith('rooms/!sealed:localhost/');
   if ((plain || sealed) && path.endsWith('/state/m.room.encryption') && req.method === 'GET') {
+    if (plain && fixture.forbidPlainState) return matrixResponse(res, 403, { errcode: 'M_FORBIDDEN' });
     if (sealed || fixture.plainEncrypted) {
       return matrixResponse(res, 200, { algorithm: 'm.megolm.v1.aes-sha2' });
     }
@@ -261,6 +262,8 @@ try {
     console.error('Synthetic fixture request sequence:', JSON.stringify(fixture.seen));
     throw error;
   }
+  assert.equal(await evaluate("document.activeElement?.id"), "connectToggle",
+    'Connection success must restore keyboard focus');
   await until("document.getElementById('timeline').textContent.includes('Synthetic inbound')");
   assert.equal(await evaluate("document.querySelector('#timeline img') === null"), true,
     'Matrix message bodies must be treated as text, never HTML');
@@ -303,6 +306,10 @@ try {
     'Encrypted Matrix rooms must remain locked');
   assert.match(await evaluate("document.getElementById('timeline').textContent"),
     /locked/);
+  assert.match(await evaluate("document.getElementById('securityText').textContent"),
+    /Encryption reported · locked/);
+  assert.doesNotMatch(await evaluate("document.getElementById('securityText').textContent"),
+    /E2EE room/);
   await evaluate(`(() => {
     [...document.querySelectorAll('#conversationList button')]
       .find(b => b.textContent.includes('Unencrypted test room')).click();
@@ -325,6 +332,29 @@ try {
   assert.equal(await evaluate("document.getElementById('tokenInput').value"), '');
   assert.equal(await evaluate("document.getElementById('sidebarStatus').textContent.includes('no DATA session')"), true);
   assert.equal(await evaluate("document.getElementById('plaintextConsent').checked"), false);
+
+  // Reconnect to a plaintext room, then simulate a revoked state lookup:
+  // cached access must become "unknown" and all subsequent sends disabled.
+  fixture.plainEncrypted = false;
+  await evaluate(`(() => {
+    document.getElementById('connectToggle').click();
+    document.getElementById('homeserverInput').value = ${JSON.stringify(homeserver)};
+    document.getElementById('tokenInput').value = 'synthetic-test-token';
+    document.getElementById('connectForm').dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }));
+  })()`);
+  await until("document.getElementById('timeline').textContent.includes('Synthetic inbound')");
+  fixture.forbidPlainState = true;
+  await evaluate("document.getElementById('refreshButton').click()");
+  await until("document.getElementById('securityText').textContent.includes('unknown')");
+  assert.equal(await evaluate("document.getElementById('sendButton').disabled"), true,
+    'A forbidden room-state recheck must lock cached plaintext');
+  assert.match(await evaluate("document.getElementById('timeline').textContent"), /locked/);
+  fixture.forbidPlainState = false;
+  await evaluate(`(() => {
+    document.getElementById('connectToggle').click();
+    document.getElementById('disconnectButton').click();
+  })()`);
 
   // Invalid authentication must not silently recover a previous session.
   await evaluate(`(() => {
