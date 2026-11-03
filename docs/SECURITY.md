@@ -61,3 +61,7 @@ An encrypted Matrix room's state is now labeled **encryption reported**, not ver
 ## Read-only secure DATA bootstrap checkpoint
 
 An isolated, unused `SecureDataBootstrap` guards future Matrix Rust SDK initialization with secure browser context, persistent IndexedDB, an exclusive Web Locks store lease and a matching `whoami()` account/device identity. It activates the SDK's global unverified-device blacklist and can inspect reported recovery/identity conditions, but exposes no messaging methods and **always returns canSend:false**. The existing plaintext UI does not instantiate or load this module. These gates and synthetic tests are not a deployed cryptographic implementation or proof of verified E2EE. See [secure DATA bootstrap scope](SECURE-DATA-SDK-BOOTSTRAP.md).
+
+## Isolated Rust/WASM dependency compatibility test
+
+A separate test-only Node 22 workspace under `integration/matrix-sdk-smoke/` installs a pinned `matrix-js-sdk@45.0.0` dependency graph from a committed npm lockfile with integrity hashes and lifecycle scripts disabled. Its CI runs a high/critical dependency audit and initializes the real Rust/WASM crypto backend with a synthetic identity in an ephemeral in-memory store. These checks do not prove vulnerability freedom, authenticated server behavior, persistent browser crypto-store safety, verified devices or a working encrypted conversation. The web and Android applications still do not import or ship the SDK. The stable release remains blocked by GitHub issue #2.
