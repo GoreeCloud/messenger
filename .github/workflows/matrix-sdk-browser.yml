@@ -29,6 +29,11 @@ jobs:
         run: npm ci --ignore-scripts --no-fund
       - name: Audit test dependency graph for high and critical findings
         run: npm audit --audit-level=high
+      - name: Expose public npm lock metadata for reviewed source pinning
+        run: |
+          echo 'GCM_BROWSER_LOCK_BEGIN_1193'
+          cat package-lock.json
+          echo 'GCM_BROWSER_LOCK_END_1193'
       - name: Build test-only browser SDK/WASM assets
         run: npm run build
       - name: Test actual Rust IndexedDB persistence and reopen in Chromium
