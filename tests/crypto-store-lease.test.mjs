@@ -31,3 +31,34 @@ test('a lock manager failure is surfaced without leaking implementation internal
   await assert.rejects(acquireCryptoStoreLease({ locks: { request() { throw new Error('secret'); } } }),
     error => error.message.includes('Could not acquire') && !error.message.includes('secret'));
 });
+
+test('concurrent release calls remain pending until Web Locks provider confirms unlock', async () => {
+  let finishProvider;
+  let providerReached = false;
+  const locks = {
+    async request(name, options, callback) {
+      assert.equal(options.mode, 'exclusive');
+      await callback({ name });
+      providerReached = true;
+      await new Promise(resolve => { finishProvider = resolve; });
+    }
+  };
+  const lease = await acquireCryptoStoreLease({ locks });
+  const first = lease.release();
+  const second = lease.release();
+  assert.equal(first, second, 'Both callers must share the same release completion promise');
+
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(providerReached, true);
+  assert.equal(typeof finishProvider, 'function');
+
+  let early = false;
+  second.then(() => { early = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(early, false, 'Unlock must not appear finished while provider is pending');
+
+  finishProvider();
+  await Promise.all([first, second]);
+  assert.equal(early, true);
+  await lease.release();
+});

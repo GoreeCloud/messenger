@@ -29,13 +29,16 @@ export async function acquireCryptoStoreLease({ locks = globalThis.navigator?.lo
     notifyFailed(new Error('Could not acquire exclusive Matrix crypto store access'));
   });
   await ready;
-  let released = false;
+  let releasePromise = null;
   return {
-    async release() {
-      if (released) return;
-      released = true;
-      unblock?.();
-      await running;
+    // Every concurrent caller must await the *same* provider completion.
+    // Merely requesting unlock does not mean the browser has released it.
+    release() {
+      if (!releasePromise) {
+        unblock?.();
+        releasePromise = running;
+      }
+      return releasePromise;
     }
   };
 }
