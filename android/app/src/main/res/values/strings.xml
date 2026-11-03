@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GoreeCloud Messenger</string>
+    <string name="preview">ANDROID DEVELOPMENT PREVIEW</string>
+    <string name="headline">Messages, on your terms.</string>
+    <string name="intro">One future inbox for RCS, MMS, SMS and private DATA. This early native build only opens your existing messaging app to compose a text.</string>
+    <string name="protocol_heading">PROTOCOL STATUS</string>
+    <string name="sms_status">SMS · delegated to device messaging app</string>
+    <string name="mms_status">MMS · native receive/send not implemented</string>
+    <string name="rcs_status">RCS · authorized provider access pending</string>
+    <string name="data_status">DATA · secure native crypto pending</string>
+    <string name="compose_heading">Compose a text</string>
+    <string name="recipient_label">Recipient phone number</string>
+    <string name="recipient_hint">+1 555 010 1234</string>
+    <string name="body_label">Message text</string>
+    <string name="body_hint">Write your message…</string>
+    <string name="handoff">Open system messaging app</string>
+    <string name="handoff_note">This does not send or store a message in GoreeCloud. Review and tap Send in your chosen messaging app. The other app chooses whether it uses SMS, MMS or another service.</string>
+    <string name="no_handler">No compatible messaging app is installed.</string>
+    <string name="invalid_recipient">Enter a valid phone number (3–15 digits).</string>
+    <string name="ready">Your existing messaging app will open with a draft. Nothing was sent.</string>
+    <string name="footnote">No SMS permissions · No message interception · No silent fallback · No tracking</string>
+</resources>

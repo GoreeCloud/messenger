@@ -6,3 +6,11 @@ dist/
 !.env.example
 *.log
 coverage/
+
+# Native Android local-only outputs
+android/.gradle/
+android/.idea/
+android/**/build/
+android/local.properties
+*.apk
+*.aab
