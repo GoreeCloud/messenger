@@ -11,3 +11,9 @@ No matrix SDK or bundler is introduced into the existing dependency-free web pre
 ### Browser WASM packaging note
 
 The upstream browser entrypoint resolves `./pkg/matrix_sdk_crypto_wasm_bg.wasm` relative to its browser JavaScript module via `import.meta.url`. Because esbuild does not emit that runtime URL as a standard imported asset, the test build explicitly copies that **exact file from the pinned npm dependency** into `dist/pkg/` adjacent to the test-only browser entrypoint. It fails if the URL contract or source asset is missing, and checks the copied file length. No remote CDN or replacement WASM is permitted.
+
+## Real-SDK integration with GoreeCloud's fail-closed bootstrap
+
+This test-only Chromium fixture now imports `src/secure-data.mjs` and runs it against the actual pinned `matrix-js-sdk@45.0.0` factory. A synthetic loopback `/_matrix/client/v3/account/whoami` stub returns either the expected device or a mismatched device. Tests verify that the mismatched device is denied **before** a crypto database opens, while the authenticated synthetic device initializes persistent Rust crypto with the externally supplied non-secret test key. The bootstrap holds the exclusive Web Lock throughout its SDK lifetime, denies competing owners, never authorizes a send, closes and releases the lock, and reopens the same IndexedDB store across a fresh page navigation. No access token outside the disposable fixture is used; the web preview and Android application still do not import the SDK.
+
+The fixture also uses a same-origin restrictive CSP with `wasm-unsafe-eval`, permitting Rust WASM compilation while preventing external scripts, cross-origin fetches, and untrusted inline code. Passing this test proves SDK/bootstrap compatibility in an ephemeral browser, **not production E2EE, encrypted messages, real accounts, device verification, or recovery**.
