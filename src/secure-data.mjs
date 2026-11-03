@@ -103,6 +103,7 @@ export class SecureDataBootstrap {
       if (!client || typeof client.whoami !== "function" ||
           typeof client.initRustCrypto !== "function" ||
           typeof client.getCrypto !== "function" ||
+          typeof client.getJoinedRoomMembers !== "function" ||
           typeof client.stopClient !== "function") {
         throw fail("SDK_INCOMPLETE", "Approved Matrix SDK lifecycle methods are missing");
       }
@@ -174,20 +175,40 @@ export class SecureDataBootstrap {
    * An encrypted-state flag and a verified user identity are observations,
    * not a permission to send. Unknown/changed identities remain blocked.
    */
-  async inspectRoom(roomId, peerUserIds = []) {
+  async inspectRoom(roomId, ...unexpectedPeerLists) {
     assertOpen(this);
-    if (typeof roomId !== "string" || !roomId.startsWith("!") ||
-        roomId.length > 255 || !Array.isArray(peerUserIds) ||
-        peerUserIds.length === 0 || peerUserIds.length > 80) {
-      return blocked("A valid room and explicit peer identities are required");
+    // A caller must not supply an incomplete peer list and thereby omit
+    // unverified recipients. Discover joined members from the SDK instead.
+    if (unexpectedPeerLists.length) {
+      return blocked("Caller-provided recipient lists are not accepted");
+    }
+    if (typeof roomId !== "string" || !/^![^:\\s]+:[^\\s]+$/u.test(roomId) ||
+        roomId.length > 255) {
+      return blocked("A valid Matrix room identifier is required");
     }
     try {
       const encryptionReported = await this.#crypto.isEncryptionEnabledInRoom(roomId) === true;
-      if (!encryptionReported) return blocked("Room encryption is absent or unknown", { encryptionReported: false });
+      if (!encryptionReported) {
+        return blocked("Room encryption is absent or unknown", { encryptionReported: false });
+      }
+      const membership = await this.#client.getJoinedRoomMembers(roomId);
+      if (!Array.isArray(membership?.joined) || membership.joined.length < 2 ||
+          membership.joined.length > 80) {
+        return blocked("Room membership is missing, incomplete or too large", { encryptionReported });
+      }
+      const identities = new Set();
+      for (const member of membership.joined) {
+        identities.add(identity(member?.user_id, "@", "room member identity"));
+      }
+      if (!identities.has(this.#identity.userId)) {
+        return blocked("Our authenticated account is not listed as joined", { encryptionReported });
+      }
+      identities.delete(this.#identity.userId);
+      if (!identities.size) {
+        return blocked("No other Matrix participant was found", { encryptionReported });
+      }
       const peers = [];
-      for (const raw of new Set(peerUserIds)) {
-        const userId = identity(raw, "@", "peer identity");
-        if (userId === this.#identity.userId) continue;
+      for (const userId of identities) {
         const trust = await this.#crypto.getUserVerificationStatus(userId);
         peers.push({
           userId,
@@ -195,15 +216,14 @@ export class SecureDataBootstrap {
             trust?.known === true && trust?.isCrossSigningVerified?.() === true
         });
       }
-      if (!peers.length) return blocked("No other Matrix participant was verified", { encryptionReported });
       const verifiedIdentities = peers.every(x => x.verified);
       return blocked(verifiedIdentities
         ? "Recipient devices and actual encryption/decryption remain unverified"
         : "One or more participant identities are unverified or changed", {
-        encryptionReported, verifiedIdentities, peers
+        encryptionReported, verifiedIdentities, peers, roomMemberCount: identities.size + 1
       });
     } catch {
-      return blocked("Unable to verify room encryption and participant identities");
+      return blocked("Unable to verify room encryption and joined participant identities");
     }
   }
 
