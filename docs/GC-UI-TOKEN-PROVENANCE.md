@@ -11,3 +11,7 @@
 - Rollback: remove the first-party stylesheet link and restore prior application token declarations from the preceding Messenger commit.
 
 **Verification:** compare the vendored CSS with the exact upstream tagged file; run `npm run check`, `npm test` and `node scripts/browser-smoke.mjs` (Node 22 and Chromium). Validate themes, responsive layout and contrast. Browser screenshots alone do not imply full accessibility acceptance.
+
+## Native Android semantic resource mapping
+
+The Android preview now includes native `values/colors.xml` and `values-night/colors.xml` with lagoon-accented GC UI v1.0.1 semantics, programmatically verified against the exact same vendored CSS via the standard-library-only `android/scripts/check-gc-ui-token-mapping.py` CI gate. The Java Activity reads these native resources at runtime to honor the device's light/dark mode. This is **not** a stable Android GC UI component SDK and has not been accepted through on-device TalkBack or visual QA.
