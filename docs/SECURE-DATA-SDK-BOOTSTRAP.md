@@ -12,7 +12,7 @@ The official maintained `matrix-js-sdk` has a Rust/WASM crypto backend and suppo
 - The bootstrap uses persistent IndexedDB and activates the SDK's `globalBlacklistUnverifiedDevices` defense-in-depth setting. It refuses partial SDK interfaces and cleans up the client/lease on failed initialization.
 - The read-only `inspectRecovery()` reports whether cross-signing, secret storage and an active trusted matching key backup are reported by the SDK. The read-only `inspectRoom()` can examine reported encryption and cross-signing-verified participant identities, but **neither ever authorizes encrypted sends**.
 - The object exports no `send` or `readMessages` method. Even if every SDK status claims success, the response remains `{status:"blocked",canSend:false}` pending audited device verification, recovery and real encrypted communication tests.
-- Only synthetic, dependency-free Node tests are run for this stage. **No real Rust/WASM SDK was installed or executed.** Do not describe this milestone as genuine cryptographic integration, end-to-end encryption, production protection, or proof of identity.
+- The bootstrap module itself is only unit-tested against synthetic SDK mocks. A **separate test-only** CI workspace now initializes the real pinned Matrix Rust/WASM SDK in Node's ephemeral memory mode; it does not call this bootstrap, provide browser IndexedDB crypto, connect real users or prove E2EE send/decrypt. Do not describe this milestone as genuine cryptographic integration, end-to-end encryption, production protection, or proof of identity.
 
 ## Still required (P0 GitHub issue #2)
 
@@ -24,3 +24,7 @@ The official maintained `matrix-js-sdk` has a Rust/WASM crypto backend and suppo
 6. Complete threat model, independent security review, browser/CSP/storage hardening and production acceptance. Do not remove the existing plaintext-preview warnings until proven.
 
 Run `npm run check` and `npm test`. The source module is intentionally dormant and cannot initialize without a future approved SDK consumer.
+
+## Pinned SDK probe provenance
+
+`integration/matrix-sdk-smoke/package.json` requires exact `matrix-js-sdk@45.0.0`. Its `package-lock.json` contains 16 transitive/direct installed package records with specific integrity hashes, including `@matrix-org/matrix-sdk-crypto-wasm@18.9.0`. The CI runs `npm ci --ignore-scripts`, `npm audit --omit=dev --audit-level=high` and the Node Rust/WASM API probe. This dependency graph is **test-only**; no browser bundle or live secure messaging integration has been approved.

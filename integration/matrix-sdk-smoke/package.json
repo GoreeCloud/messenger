@@ -1,0 +1,14 @@
+{
+  "name": "@goreecloud/messenger-matrix-crypto-compat",
+  "version": "0.0.0-test-only",
+  "private": true,
+  "type": "module",
+  "description": "Isolated Matrix Rust/WASM compatibility probe; not imported by Messenger",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "matrix-js-sdk": "45.0.0"
+  },
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  }
+}
