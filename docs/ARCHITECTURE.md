@@ -4,7 +4,7 @@
 
 `web/`: dependency-free, accessible web presentation and ephemeral conversation state.
 
-`src/protocols.mjs`: pure, platform-neutral delivery policy. Every candidate needs verified capability. Default secure mode requires independently verified encryption; fallback requires explicit policy and ciphertext-to-plaintext confirmation.
+`src/protocols.mjs`: pure, platform-neutral delivery policy. Every candidate needs verified capability. Default secure mode requires explicit DATA cryptographic verification (not an unauthenticated encryption flag); SMS/MMS/RCS remain non-E2EE candidates until approved adapters exist; fallback requires explicit policy and ciphertext-to-plaintext confirmation.
 
 `src/matrix.mjs`: minimal Matrix Client-Server adapter for **testing plaintext**. The connector uses HTTPS origin validation, bearer headers, request timeout, no redirects, no HTTP caching, bounded reads, session-only secrets, fresh encryption-state inspection before plaintext reads/sends, cancellation on disconnect, and an idempotency transaction ID per message. This client-server security-state check cannot be atomic with a subsequent message PUT. It intentionally refuses encrypted or unknown-security rooms.
 
