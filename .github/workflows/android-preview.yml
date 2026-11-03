@@ -26,8 +26,13 @@ jobs:
           gradle-version: "8.13"
       - name: Install Android SDK 36 using runner command-line tools
         run: |
-          sdkmanager --version
-          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDK_MANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDK_MANAGER"
+          "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --version
+          yes | "$SDK_MANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null || true
+          "$SDK_MANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36" "build-tools;35.0.0"
       - name: Compile native preview and run JVM tests
         working-directory: android
         run: gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace
