@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111827">
   <meta name="description" content="GoreeCloud Messenger — one interface, four messaging protocols, transparent security.">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src https: http://localhost:* http://127.0.0.1:* http://[::1]:*; form-action 'none'; frame-src 'none'; worker-src 'none'">
   <title>GoreeCloud Messenger · Development preview</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -52,7 +54,7 @@
           <button class="ghost small" id="refreshButton" type="button" title="Refresh current Matrix conversation">Refresh</button>
         </div>
         <div class="security-strip" id="securityStrip" role="status">
-          <span class="security-symbol" aria-hidden="true">ⓘ</span>
+          <span class="security-symbol" aria-hidden="true">i</span>
           <span id="securityText">Local-only notes · not encrypted or backed up</span>
         </div>
         <section id="timeline" class="timeline" aria-label="Message history"></section>
