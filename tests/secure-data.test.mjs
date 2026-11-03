@@ -8,7 +8,10 @@ const goodIdentity = {
   userId: "@alice:example.test",
   deviceId: "ALICE1",
   secureContext: true,
-  indexedDB: { open() {} }
+  indexedDB: { open() {} },
+  // Synthetic input is deterministic for tests ONLY. Real applications must
+  // retrieve a stable, high-entropy per-device key from approved secret storage.
+  storageKey: Uint8Array.from({ length: 32 }, (_, index) => index + 1)
 };
 function fakeSdk(overrides = {}) {
   const calls = [];
@@ -27,7 +30,9 @@ function fakeSdk(overrides = {}) {
   };
   const client = {
     async whoami() { calls.push("whoami"); return { user_id: goodIdentity.userId, device_id: goodIdentity.deviceId }; },
-    async initRustCrypto(options) { calls.push(["rust-crypto", options.useIndexedDB]); },
+    async initRustCrypto(options) {
+      calls.push(["rust-crypto", options.useIndexedDB, options.storageKey]);
+    },
     getCrypto() { calls.push("get-crypto"); return crypto; },
     async getJoinedRoomMembers() {
       calls.push("joined-members");
@@ -53,7 +58,9 @@ test("rejects non-secure contexts, absent IndexedDB and invalid identity before 
   for (const fields of [
     { secureContext: false }, { indexedDB: null },
     { userId: "not-a-Matrix-ID" }, { userId: "@missingdomain" }, { deviceId: "" },
-    { accessToken: "bad\nBearer" }, { homeserver: "http://matrix.example.test" }
+    { accessToken: "bad\nBearer" }, { homeserver: "http://matrix.example.test" },
+    { storageKey: null }, { storageKey: "hardcoded-password" },
+    { storageKey: new Uint8Array(31) }, { storageKey: new Uint8Array(32) }
   ]) {
     await assert.rejects(SecureDataBootstrap.open({ ...goodIdentity, ...env, ...fields }));
   }
@@ -69,6 +76,12 @@ test("binds account and device before opening Rust crypto store", async () => {
   assert.deepEqual(env.calls.slice(0,4).map(x => Array.isArray(x) ? x[0] : x),
     ["lease", "create", "whoami", "rust-crypto"]);
   assert.equal(env.calls[3][1], true, "Rust crypto must use IndexedDB");
+  const sdkStoreKey = env.calls[3][2];
+  assert.ok(sdkStoreKey instanceof Uint8Array);
+  assert.equal(sdkStoreKey.byteLength, 32);
+  assert.notStrictEqual(sdkStoreKey, goodIdentity.storageKey,
+    "SDK must not receive a mutable caller-owned key buffer");
+  assert.deepEqual([...sdkStoreKey], [...goodIdentity.storageKey]);
   assert.equal(env.crypto.globalBlacklistUnverifiedDevices, true);
   const opts = env.calls[1][1];
   assert.equal(opts.deviceId, goodIdentity.deviceId);
@@ -78,6 +91,10 @@ test("binds account and device before opening Rust crypto store", async () => {
   assert.equal(typeof s.sendEvent, "undefined");
   assert.equal(typeof s.send, "undefined");
   await s.close(); await s.close();
+  assert.ok(sdkStoreKey.every(byte => byte === 0),
+    "Bootstrap's SDK key copy must be cleared after closing");
+  assert.equal(goodIdentity.storageKey[0], 1,
+    "Caller retains responsibility for their original key buffer");
   assert.equal(env.isLocked(), false);
   assert.equal(env.calls.filter(x => x === "stop").length, 1);
 });
@@ -318,4 +335,32 @@ test("shutdown releases the lease even if the real SDK stop rejects", async () =
   await assert.rejects(b, /shutdown failed/);
   assert.equal(env.isLocked(), false);
   assert.equal(env.calls.filter(x => x === "release").length, 1);
+});
+
+test("SDK startup failure wipes the bootstrap's private store-key copy", async () => {
+  let capturedKey;
+  const env = fakeSdk({ client: {
+    async initRustCrypto(options) {
+      capturedKey = options.storageKey;
+      throw new Error("synthetic startup failure");
+    }
+  } });
+  await assert.rejects(SecureDataBootstrap.open({ ...goodIdentity, ...env }),
+    error => error.code === "INITIALIZATION_FAILED");
+  assert.ok(capturedKey instanceof Uint8Array);
+  assert.ok(capturedKey.every(byte => byte === 0));
+  assert.equal(goodIdentity.storageKey[0], 1);
+  assert.equal(env.isLocked(), false);
+});
+
+test("simultaneous shutdown wipes the key even if stopClient throws", async () => {
+  let capturedKey;
+  const env = fakeSdk({ client: {
+    async initRustCrypto(options) { capturedKey = options.storageKey; },
+    async stopClient() { throw new Error("synthetic stop rejection"); }
+  } });
+  const session = await SecureDataBootstrap.open({ ...goodIdentity, ...env });
+  await assert.rejects(session.close(), /stop rejection/);
+  assert.ok(capturedKey.every(byte => byte === 0));
+  assert.equal(env.isLocked(), false);
 });

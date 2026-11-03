@@ -73,3 +73,7 @@ The SDK bootstrap's future E2EE room inspector now fetches the joined member lis
 ## Browser crypto-store prerequisites (synthetic-only)
 
 Headless Chromium now tests real same-origin Web Locks exclusivity and reuse plus a disposable IndexedDB write/read after reload. Tests contain no accounts, messages, tokens, crypto secrets or third-party network calls. Browser primitives are necessary, not sufficient, for Matrix Rust crypto-store security; no actual Rust crypto database is opened by this test and E2EE remains inactive.
+
+## Persistent Rust crypto store confidentiality (future-only)
+
+Matrix SDK documents that `initRustCrypto({useIndexedDB:true})` without a `storageKey` or `storagePassword` leaves the persistent store **unencrypted**. The unused secure-DATA bootstrap now requires a nonzero 32-byte external device key, passes a cloned buffer to the SDK, and zeroes that clone when closed or initialization fails. The source input remains owned by its caller. Secure device-key generation, encrypted key custody, recovery, and actual browser Rust store testing are **not implemented**. No product claims of encrypted local storage or E2EE are made.

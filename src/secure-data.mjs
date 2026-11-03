@@ -55,12 +55,14 @@ export class SecureDataBootstrap {
   #closed = false;
   #closing = null;
   #identity;
+  #storeKey;
 
-  constructor(key, client, crypto, lease) {
+  constructor(key, client, crypto, lease, storeKey) {
     this.#identity = key;
     this.#client = client;
     this.#crypto = crypto;
     this.#lease = lease;
+    this.#storeKey = storeKey;
   }
 
   /**
@@ -69,7 +71,7 @@ export class SecureDataBootstrap {
    * long-lived credentials in localStorage is permitted.
    */
   static async open({
-    homeserver, accessToken, userId, deviceId, createClient,
+    homeserver, accessToken, userId, deviceId, createClient, storageKey,
     acquireLease = acquireCryptoStoreLease,
     secureContext = globalThis.isSecureContext,
     indexedDB = globalThis.indexedDB
@@ -85,6 +87,14 @@ export class SecureDataBootstrap {
       throw fail("STORE_UNAVAILABLE",
         "Secure DATA needs a secure browser context and persistent IndexedDB");
     }
+    // Matrix Rust's persistent IndexedDB is *unencrypted* if both SDK
+    // storageKey and storagePassword are omitted. Require an externally
+    // provisioned stable 32-byte key; never derive it from access tokens.
+    if (!(storageKey instanceof Uint8Array) || storageKey.byteLength !== 32 ||
+        storageKey.every(byte => byte === 0)) {
+      throw fail("STORE_KEY_REQUIRED",
+        "A protected 32-byte device crypto-store key is required");
+    }
     if (typeof createClient !== "function" || typeof acquireLease !== "function") {
       throw fail("SDK_MISSING", "An approved Matrix Rust crypto SDK is required");
     }
@@ -95,6 +105,9 @@ export class SecureDataBootstrap {
     if (!lease || typeof lease.release !== "function") {
       throw fail("LEASE_INVALID", "Exclusive crypto-store access was not established");
     }
+    // Never hand the caller-owned buffer directly to the SDK. The clone is
+    // cleared on close, after the underlying client has stopped, or on error.
+    const storeKey = Uint8Array.from(storageKey);
     let client;
     try {
       client = createClient({
@@ -116,7 +129,7 @@ export class SecureDataBootstrap {
       if (who?.user_id !== account || who?.device_id !== id) {
         throw fail("IDENTITY_MISMATCH", "Matrix token did not match the account and device");
       }
-      await client.initRustCrypto({ useIndexedDB: true });
+      await client.initRustCrypto({ useIndexedDB: true, storageKey: storeKey });
       const crypto = client.getCrypto();
       for (const method of [
         "isEncryptionEnabledInRoom", "isCrossSigningReady",
@@ -128,10 +141,11 @@ export class SecureDataBootstrap {
       // devices even if future callers bypass the current read-only facade.
       crypto.globalBlacklistUnverifiedDevices = true;
       return new SecureDataBootstrap(
-        { homeserver: origin, userId: account, deviceId: id }, client, crypto, lease
+        { homeserver: origin, userId: account, deviceId: id }, client, crypto, lease, storeKey
       );
     } catch (error) {
       try { await client?.stopClient?.(); } catch { /* preserve original failure */ }
+      storeKey.fill(0);
       await lease.release();
       if (error instanceof SecureDataGateError) throw error;
       // Do not leak tokens, homeserver errors or crypto-store paths into UI.
@@ -251,14 +265,19 @@ export class SecureDataBootstrap {
     this.#closed = true;
     const client = this.#client;
     const lease = this.#lease;
+    const storeKey = this.#storeKey;
     this.#client = null;
     this.#crypto = null;
     this.#lease = null;
+    this.#storeKey = null;
     // One shared shutdown promise: concurrent close callers must both wait
     // for stopClient AND lease release before opening another crypto store.
     this.#closing = (async () => {
       try { await client.stopClient(); }
-      finally { await lease.release(); }
+      finally {
+        storeKey.fill(0);
+        await lease.release();
+      }
     })();
     return this.#closing;
   }
