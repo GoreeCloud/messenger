@@ -463,11 +463,19 @@ try {
     });
     try {
       const txn = db.transaction('synthetic', 'readonly');
+      const finished = new Promise((resolve, reject) => {
+        txn.oncomplete = resolve;
+        txn.onerror = () => reject(txn.error);
+        txn.onabort = () => reject(txn.error);
+      });
       const record = txn.objectStore('synthetic').get('lifecycle');
       const value = await new Promise((resolve, reject) => {
         record.onsuccess = () => resolve(record.result);
         record.onerror = () => reject(record.error);
       });
+      // db.close() does not abort ongoing transactions. Wait for completion
+      // before requesting deletion to avoid an IndexedDB onblocked race.
+      await finished;
       return value;
     } finally {
       db.close();
@@ -475,7 +483,8 @@ try {
       await new Promise((resolve, reject) => {
         deletion.onsuccess = resolve;
         deletion.onerror = () => reject(deletion.error);
-        deletion.onblocked = () => reject(new Error('Disposable IndexedDB cleanup blocked'));
+        // onblocked only notifies about a closing connection; success may
+        // still follow. The CDP command timeout bounds this test.
       });
     }
   })()`);
