@@ -155,8 +155,24 @@ try {
   await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
   assert.ok(!(await evaluate("document.getElementById('timeline').textContent")).includes(
     'Synthetic test note'), 'Notes must be volatile after refresh');
+  await call('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+  });
+  await call('Page.reload', { ignoreCache: true });
+  await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
+  assert.equal(await evaluate("getComputedStyle(document.documentElement).colorScheme"), 'dark');
   await capture('desktop-dark');
+  await call('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }]
+  });
+  await call('Page.reload', { ignoreCache: true });
+  await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
+  assert.equal(await evaluate("getComputedStyle(document.documentElement).colorScheme"), 'light');
+  await capture('desktop-light');
 
+  await call('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+  });
   await call('Emulation.setDeviceMetricsOverride',
     { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await call('Page.reload', { ignoreCache: true });
@@ -170,6 +186,13 @@ try {
   assert.ok(layout.scrollWidth <= layout.width + 2,
     'Mobile page has horizontal overflow: ' + JSON.stringify(layout));
   await capture('mobile-dark');
+  await call('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }]
+  });
+  await call('Page.reload', { ignoreCache: true });
+  await until("document.readyState === 'complete' && document.querySelectorAll('#conversationList button').length > 0");
+  assert.equal(await evaluate("getComputedStyle(document.documentElement).colorScheme"), 'light');
+  await capture('mobile-light');
   console.log('Browser smoke PASSED: notes, routing, filter, keyboard, theme, reload, 390px layout');
 } finally {
   if (socket) socket.close();
