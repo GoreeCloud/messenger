@@ -43,4 +43,8 @@ The read-only inspector now uses exactly the supported `UserVerificationStatus` 
 
 ## Real browser primitive checks
 
-The existing Chromium smoke now imports the **unused** `acquireCryptoStoreLease` helper in a secure loopback origin and exercises the browser's actual `navigator.locks` manager: one exclusive owner holds the lock, a concurrent request is refused, and the lock becomes available again after release. It also writes a **synthetic marker only** to a disposable IndexedDB database, reloads the page, verifies persistence, and deletes the database. This verifies browser primitives and cleanup, **not** the actual Matrix Rust IndexedDB crypto store, encryption, a two-tab race, or recovery. The future SDK browser-bundle integration and device acceptance remain open.
+The existing Chromium smoke now imports the **unused** `acquireCryptoStoreLease` helper in a secure loopback origin and exercises the browser's actual `navigator.locks` manager: one exclusive owner holds the lock, a concurrent request is refused, and the lock becomes available again after release. It also writes a **synthetic marker only** to a disposable IndexedDB database, reloads the page, verifies persistence, and deletes the database. This verifies browser primitives and cleanup, **not** the actual Matrix Rust IndexedDB crypto store, encryption or recovery. The future SDK browser-bundle integration and device acceptance remain open.
+
+## Independent browser-tab contention
+
+The Chromium test now creates a **separate Chrome DevTools Protocol page target** using the same browser profile and origin, acquires the exclusive crypto-store Web Lock in that tab, verifies the first tab is denied, releases the second tab and verifies the first can acquire it. This tests actual per-origin cross-tab Web Locks coordination, not a deployed multi-device Matrix client or actual Rust encrypted key persistence.

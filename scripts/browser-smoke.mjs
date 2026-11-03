@@ -124,19 +124,20 @@ const server = createServer(async (req, res) => {
 let browser, socket;
 const pending = new Map();
 let nextId = 1;
-function call(method, params = {}) {
+function call(method, params = {}, sessionId = null) {
   return new Promise((accept, reject) => {
     const id = nextId++;
     const timer = setTimeout(() => {
       pending.delete(id); reject(new Error('CDP command timed out: ' + method));
     }, 10000);
     pending.set(id, { accept, reject, timer });
-    socket.send(JSON.stringify({ id, method, params }));
+    socket.send(JSON.stringify({ id, method, params,
+      ...(sessionId ? { sessionId } : {}) }));
   });
 }
-async function evaluate(expression) {
+async function evaluate(expression, sessionId = null) {
   const reply = await call('Runtime.evaluate', { expression, returnByValue: true,
-    awaitPromise: true });
+    awaitPromise: true }, sessionId);
   if (reply.exceptionDetails) {
     throw new Error('Browser JS exception: ' +
       (reply.exceptionDetails.text || JSON.stringify(reply.exceptionDetails)));
@@ -427,6 +428,74 @@ try {
     }
   })()`);
   assert.equal(lockReleased, true, 'Released crypto store must be reusable');
+
+  // Independent CDP target (= separate browser tab), same Chromium profile
+  // and origin. This is stronger than two tasks in one JavaScript realm.
+  const extra = await call('Target.createTarget', {
+    url: 'http://127.0.0.1:' + port + '/web/'
+  });
+  let otherSession = null;
+  try {
+    const attached = await call('Target.attachToTarget',
+      { targetId: extra.targetId, flatten: true });
+    otherSession = attached.sessionId;
+    await call('Runtime.enable', {}, otherSession);
+    let ready = false;
+    for (let n = 0; n < 80; n++) {
+      try {
+        ready = await evaluate("document.readyState === 'complete'", otherSession);
+      } catch { /* target still navigating */ }
+      if (ready) break;
+      await sleep(100);
+    }
+    assert.equal(ready, true, 'Second Chromium tab did not load');
+    const secondHeld = await evaluate(`(async () => {
+      const { acquireCryptoStoreLease } =
+        await import('/src/crypto-store-lease.mjs');
+      window.__gcSmokeHeldLease = await acquireCryptoStoreLease();
+      return true;
+    })()`, otherSession);
+    assert.equal(secondHeld, true);
+    const mainRejected = await evaluate(`(async () => {
+      const { acquireCryptoStoreLease } =
+        await import('/src/crypto-store-lease.mjs');
+      try {
+        const duplicate = await acquireCryptoStoreLease();
+        await duplicate.release();
+        return false;
+      } catch (error) {
+        return error.message.includes('Another Messenger tab');
+      }
+    })()`);
+    assert.equal(mainRejected, true,
+      'Main tab must not acquire exclusive crypto store held by second tab');
+    const secondReleased = await evaluate(`(async () => {
+      await window.__gcSmokeHeldLease.release();
+      delete window.__gcSmokeHeldLease;
+      return true;
+    })()`, otherSession);
+    assert.equal(secondReleased, true);
+    const mainReacquired = await evaluate(`(async () => {
+      const { acquireCryptoStoreLease } =
+        await import('/src/crypto-store-lease.mjs');
+      const lease = await acquireCryptoStoreLease();
+      await lease.release();
+      return true;
+    })()`);
+    assert.equal(mainReacquired, true,
+      'Main tab must regain crypto-store access after second tab releases it');
+    console.log('Chromium cross-tab Web Locks PASSED: independent tab exclusivity and release');
+  } finally {
+    if (otherSession) {
+      // Closing a tab must implicitly release its held locks even if it
+      // exited unexpectedly. This test does not contact Matrix servers.
+      await call('Target.detachFromTarget', { sessionId: otherSession })
+        .catch(() => {});
+    }
+    await call('Target.closeTarget', { targetId: extra.targetId })
+      .catch(() => {});
+  }
+
 
   // A disposable IndexedDB database proves that Chromium storage can persist
   // across a navigation. This does NOT test Matrix Rust's crypto database.
