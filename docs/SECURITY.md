@@ -27,3 +27,11 @@
 Implement and verify audited crypto/key management, server and device authorization, encryption at rest where applicable, independent threat modeling, privacy-retention controls, recovery tests, authenticated media, rate limiting, security headers, CI vulnerability checks, and tests against real accounts/devices. Never log tokens or plaintext user messages.
 
 For production E2EE technical acceptance see [DATA-E2EE-GATE.md](DATA-E2EE-GATE.md).
+
+## Cycle 3 boundaries — timeline and temporary drafts
+
+- Failed/uncertain sends are retained after a room refresh, instead of silently disappearing. Timeline reconciliation only uses a returned homeserver event ID, never matching message text or timestamps.
+- The tab-only draft store has a 100-record/16,000-character bound and is cleared for remote rooms on disconnect or account switch. No browser storage API is used. Refreshing or closing the tab loses all drafts.
+- The volatile outbox now rejects malformed homeserver acknowledgments so they remain retriable with the same transaction ID, not silently classified as delivered.
+- `acquireCryptoStoreLease` is an unused **future integration safeguard** for cooperating tabs that would share a Matrix Rust crypto IndexedDB store. It does not establish E2EE, protect against a compromised browser, or provide crypto device verification.
+- Actual mobile/browser integration, E2EE, offline durable delivery, media, SMS/MMS/RCS and multi-device recovery remain unverified and unimplemented.

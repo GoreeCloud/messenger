@@ -1,8 +1,11 @@
 import { planRoute, createCapabilities, formatSecurity } from "../src/protocols.mjs";
 import { MatrixPlaintextSession } from "../src/matrix.mjs";
 import { InMemoryOutbox } from "../src/outbox.mjs";
+import { reconcileTimeline } from "../src/timeline.mjs";
+import { SessionDrafts } from "../src/drafts.mjs";
 
 const $ = id => document.getElementById(id);
+const drafts = new SessionDrafts();
 const state = {
   session: null, outbox: null, userId: "", rooms: [], notes: [], messages: new Map(),
   selected: "notes", filter: "ALL", query: "", loading: false,
@@ -27,6 +30,14 @@ function announce(message) {
   announce.timeout = setTimeout(() => els.toast.classList.remove("visible"), 5000);
 }
 function selectedRoom() { return state.rooms.find(room => room.id === state.selected); }
+function selectConversation(id) {
+  if (id === state.selected) return;
+  drafts.set(state.selected, els.message.value);
+  state.selected = id;
+  els.message.value = drafts.get(id);
+  render();
+  if (selectedRoom()) void loadMessages();
+}
 function dateLabel(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
@@ -66,7 +77,7 @@ function renderList() {
     const copy = node("span", "conversation-copy");
     copy.append(node("strong", "", item.name), node("small", "", item.subtitle));
     button.append(avatar, copy, node("span", "conversation-tag", item.protocol));
-    button.addEventListener("click", () => { state.selected = item.id; render(); if (item.protocol === "DATA") void loadMessages(); });
+    button.addEventListener("click", () => selectConversation(item.id));
     els.list.append(button);
   }
 }
@@ -147,7 +158,7 @@ async function loadMessages() {
     const messages = await session.readMessages(room, state.userId);
     // A disconnect or account switch must never populate the next session.
     if (state.session === session && state.selected === room.id) {
-      state.messages.set(room.id, messages);
+      state.messages.set(room.id, reconcileTimeline(state.messages.get(room.id) || [], messages));
     }
     if (state.session === session) announce("Updated Matrix messages");
   } catch (error) { announce(error.message); }
@@ -161,7 +172,7 @@ async function send() {
     if (els.transport.value !== "LOCAL") return announce("Notes are local only. No carrier gateway is configured.");
     state.notes.push({ id: crypto.randomUUID(), text, timestamp: Date.now(),
       protocol: "LOCAL", encrypted: false, own: true });
-    els.message.value = ""; render(); return;
+    els.message.value = ""; drafts.set(state.selected, ""); render(); return;
   }
   if (!state.session || !state.allowPlaintext || room.encrypted !== "plaintext") {
     return announce("Blocked by transport/security policy. Nothing was sent.");
@@ -173,7 +184,7 @@ async function send() {
   const message = { id: crypto.randomUUID(), text, timestamp: Date.now(),
     protocol: "DATA", encrypted: false, own: true, error: false, delivery: "Queued" };
   const messages = state.messages.get(room.id) || [];
-  state.messages.set(room.id, [...messages, message]); els.message.value = "";
+  state.messages.set(room.id, [...messages, message]); els.message.value = ""; drafts.set(state.selected, "");
   await transmit(room, message);
 }
 async function transmit(room, message) {
@@ -181,9 +192,13 @@ async function transmit(room, message) {
   if (!outbox) return announce("No DATA session is active. Nothing was sent.");
   state.loading = true; message.delivery = "Sending"; render();
   try {
-    await outbox.dispatch({
+    const receipt = await outbox.dispatch({
       room, text: message.text, txnId: message.id, allowPlaintext: state.allowPlaintext
     });
+    if (typeof receipt?.event_id !== "string" || !receipt.event_id) {
+      throw new Error("The server did not return a message ID; delivery cannot be confirmed");
+    }
+    message.eventId = receipt.event_id;
     if (state.outbox !== outbox) return;
     message.error = false; message.delivery = "Accepted by homeserver";
     announce("Matrix homeserver accepted message · not E2EE");
@@ -207,6 +222,8 @@ function disconnect() {
   state.session?.close();
   state.session = null; state.rooms = []; state.userId = ""; state.selected = "notes";
   state.messages.clear(); state.allowPlaintext = false; state.loading = false;
+  drafts.clearOtherAccounts();
+  els.message.value = drafts.get("notes");
   $("plaintextConsent").checked = false; $("tokenInput").value = "";
   $("connectionStatus").textContent = "Disconnected. Credentials were not persisted.";
   announce("DATA disconnected"); render();
@@ -229,7 +246,9 @@ async function connect(event) {
     state.session?.close();
     state.session = next; state.outbox = new InMemoryOutbox({ transport: next });
     state.userId = userId; state.rooms = rooms; state.messages.clear();
+    drafts.clearOtherAccounts();
     state.selected = rooms.length ? rooms[0].id : "notes";
+    els.message.value = drafts.get(state.selected);
     state.allowPlaintext = false; $("plaintextConsent").checked = false;
     $("tokenInput").value = "";
     $("connectionStatus").textContent = "Connected as " + userId + " · " + rooms.length + " rooms inspected";
@@ -252,6 +271,7 @@ els.message.addEventListener("keydown", e => {
     e.preventDefault(); void send();
   }
 });
+els.message.addEventListener("input", () => drafts.set(state.selected, els.message.value));
 $("searchInput").addEventListener("input", e => { state.query = e.target.value.toLowerCase(); renderList(); });
 document.querySelectorAll("[data-filter]").forEach(button => button.addEventListener("click", () => setFilter(button.dataset.filter)));
 els.transport.addEventListener("change", renderComposer);

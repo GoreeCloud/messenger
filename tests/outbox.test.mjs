@@ -81,3 +81,18 @@ test("closed session suppresses late acknowledgment", async () => {
   resolve({ event_id: "$late" });
   await assert.rejects(pending, /closed/);
 });
+
+test("invalid homeserver acknowledgment remains a retryable unknown delivery", async () => {
+  let attempts = 0;
+  const outbox = new InMemoryOutbox({
+    transport: { sendPlaintext: async () => {
+      attempts++;
+      return attempts === 1 ? { error: "bad ack" } : { event_id: "$ok" };
+    } }
+  });
+  const args = { room, text: "retry me", txnId: "stable-id-123", allowPlaintext: true };
+  await assert.rejects(outbox.dispatch(args), /acknowledge/);
+  assert.equal(outbox.getStatus(room.id, args.txnId), "failed");
+  assert.deepEqual(await outbox.dispatch(args), { event_id: "$ok" });
+  assert.equal(attempts, 2);
+});
