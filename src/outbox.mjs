@@ -57,6 +57,11 @@ export class InMemoryOutbox {
       return this.#transport.sendPlaintext(room, text, txnId, { allowPlaintext: true });
     }).then(receipt => {
       if (this.#closed) throw new OutboxError("Outbox session is closed");
+      // Unconfirmed/invalid acknowledgments remain retriable with the SAME id.
+      // The provider may have accepted the send; never invent a new transaction.
+      if (typeof receipt?.event_id !== "string" || !receipt.event_id.startsWith("$")) {
+        throw new OutboxError("Homeserver did not acknowledge a valid event ID");
+      }
       record.status = "sent";
       record.receipt = receipt;
       return receipt;

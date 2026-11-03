@@ -52,3 +52,7 @@ Matrix is an independent, open messaging protocol. GoreeCloud Messenger is a fir
 ## Contributions
 
 No deployment, production account, device permissions, or protected services are modified by this development foundation. Review privacy, consent and encryption-state handling before proposing live messaging changes. Do not add hard-coded access tokens, secrets or unreviewed cryptographic primitives.
+
+## Delivery and drafting (development preview)
+
+The web preview now keeps per-conversation drafts only in browser-tab memory. Matrix room refresh merges server events with pending/uncertain local sends using server-provided event IDs; failures remain visible for manual retry. Accepted-by-homeserver is **not** delivery to the recipient or cryptographic confirmation. Disconnect clears account drafts but retains local notes; refresh and tab close discard all drafts. A cooperative Web Locks lease helper is available for future vetted Matrix Rust E2EE integration; **no E2EE client is integrated**.

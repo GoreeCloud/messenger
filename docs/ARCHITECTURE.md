@@ -42,3 +42,7 @@
 A Matrix homeserver's state response is not itself sufficient proof of trustworthy encryption or verified recipients. Production security needs cryptographic session validation, key verification, account recovery and adversarial testing.
 
 **E2EE integration specification:** [DATA-E2EE-GATE.md](DATA-E2EE-GATE.md) documents required upstream SDK, verification, recovery and release acceptance gates.
+
+## Cycle 3 preview quality work
+
+`src/timeline.mjs` merges bounded Matrix server history with pending and failed local sends. Reconciliation requires the server event ID from the original send response; it does not equate same-text messages with the same event. `src/drafts.mjs` keeps the current composer value for each conversation in volatile tab memory. The connection lifecycle clears account-specific drafts. `src/crypto-store-lease.mjs` is an isolated, currently unused Web Locks guard for a future Rust crypto store integration; E2EE remains blocked.
