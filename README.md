@@ -56,3 +56,7 @@ No deployment, production account, device permissions, or protected services are
 ## Delivery and drafting (development preview)
 
 The web preview now keeps per-conversation drafts only in browser-tab memory. Matrix room refresh merges server events with pending/uncertain local sends using server-provided event IDs; failures remain visible for manual retry. Accepted-by-homeserver is **not** delivery to the recipient or cryptographic confirmation. Disconnect clears account drafts but retains local notes; refresh and tab close discard all drafts. A cooperative Web Locks lease helper is available for future vetted Matrix Rust E2EE integration; **no E2EE client is integrated**.
+
+### Connection cancellation safeguards
+
+Disconnect now cancels a pending Matrix session and invalidates its authentication and room-list results. Room timeline reads use a separate generation ticket to prevent stale account/room results from mutating the active session. These are browser-preview lifecycle safeguards, not an audited encryption implementation.
