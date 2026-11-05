@@ -85,3 +85,11 @@ The separate CI-only Matrix Rust browser probe initializes `matrix-js-sdk@45.0.0
 ## Web plaintext timeline race hardening
 
 The developer-only Matrix plaintext client now rechecks room encryption state **after** the timeline response returns, before any message is rendered. If a room turns encrypted or its state becomes inaccessible, the received plaintext timeline is rejected. The extra state request carries a latency cost and remains non-atomic with changes occurring afterward; it is **not** end-to-end encryption. Access tokens containing HTTP control characters are also rejected before headers are constructed.
+
+## Plaintext Matrix room identity consistency
+
+The developer-preview Matrix adapter now captures the selected room ID once per read/send, validates the room's basic identifier shape, and uses that captured ID consistently for the encryption-state checks, timeline URL, and plaintext PUT. A room object that changes ID or is marked encrypted while the asynchronous security check runs is rejected. The volatile outbox also refuses a changed room before dispatching and passes the transport a frozen identity snapshot instead of a caller-owned mutable UI object.
+
+Synthetic regressions verify that switched-room sends do not issue plaintext PUTs, that mixed-room timelines are rejected, and that malformed room identifiers fail before network access. Existing outbox tests exercise normal idempotent dispatch; **a dedicated additional outbox-mutation test was not committed because the integration rejected that write**. Source review and general CI are not equivalent to full adversarial coverage.
+
+**Residual limit:** The Matrix server can still change encryption state after the final check and before a PUT. These improvements do not provide E2EE, remote-device verification, atomic transport authorization, or confidential messaging. Use only disposable plaintext development rooms.
