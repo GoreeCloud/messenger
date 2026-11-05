@@ -84,6 +84,72 @@ test("room transitioning to E2EE blocks plaintext PUT with cached plaintext stat
     { allowPlaintext: true }), /changed/);
   assert.deepEqual(calls, ["GET"]);
 });
+test("mutable room identity cannot redirect a plaintext PUT after the security check", async () => {
+  for (const mutation of ["switch-room", "mark-encrypted"]) {
+    const room = { id: "!original:example.org", encrypted: "plaintext" };
+    const calls = [];
+    const session = new MatrixPlaintextSession({
+      homeserver: "https://matrix.example.org", accessToken: "fixture",
+      fetchImpl: async (url, opts) => {
+        calls.push({ url, method: opts.method });
+        if (url.endsWith("/state/m.room.encryption")) {
+          if (mutation === "switch-room") room.id = "!other:example.org";
+          else room.encrypted = "encrypted";
+          return fake(404);
+        }
+        return fake(200, { event_id: "$unexpected" });
+      }
+    });
+    await assert.rejects(
+      session.sendPlaintext(room, "sensitive", "txn-12345678", { allowPlaintext: true }),
+      /Room (identity|encryption) changed/
+    );
+    assert.equal(calls.length, 1, "No PUT may follow a changed room");
+    assert.match(calls[0].url, /original%3Aexample\.org/);
+    assert.equal(calls[0].method, "GET");
+    session.close();
+  }
+});
+
+test("mutable room identity cannot mix the timeline of another room", async () => {
+  const room = { id: "!original:example.org", encrypted: "plaintext" };
+  const calls = [];
+  const session = new MatrixPlaintextSession({
+    homeserver: "https://matrix.example.org", accessToken: "fixture",
+    fetchImpl: async (url, opts) => {
+      calls.push({ url, method: opts.method });
+      if (url.endsWith("/state/m.room.encryption")) return fake(404);
+      if (url.includes("/messages?")) {
+        room.id = "!other:example.org";
+        return fake(200, { chunk: [{
+          type: "m.room.message", event_id: "$not-displayed",
+          content: { msgtype: "m.text", body: "stale message" }
+        }] });
+      }
+      assert.fail("Unanticipated Matrix request");
+    }
+  });
+  await assert.rejects(session.readMessages(room), /Room identity changed/);
+  assert.equal(calls.length, 2, "No state check of a different room may validate old results");
+  assert.ok(calls.every(x => x.url.includes("original%3Aexample.org")));
+  session.close();
+});
+
+test("malformed Matrix room identity is rejected before network access", async () => {
+  let network = 0;
+  const session = new MatrixPlaintextSession({
+    homeserver: "https://matrix.example.org", accessToken: "fixture",
+    fetchImpl: async () => { network++; return fake(404); }
+  });
+  for (const id of ["!room", "!room name:example.org", "!room:example.org\nInjected", "", "!x:"]) {
+    await assert.rejects(
+      session.sendPlaintext({ id, encrypted: "plaintext" },
+        "hello", "txn-12345678", { allowPlaintext: true }), MatrixError);
+  }
+  assert.equal(network, 0);
+  session.close();
+});
+
 test("a forbidden state lookup is never interpreted as plaintext", async () => {
   const session = new MatrixPlaintextSession({
     homeserver: "https://example.org", accessToken: "x",

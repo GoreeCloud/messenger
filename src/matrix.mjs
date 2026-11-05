@@ -120,24 +120,41 @@ export class MatrixPlaintextSession {
     return { id: roomId, name, encrypted };
   }
 
-  async #requireFreshPlaintext(room) {
-    if (!room || room.encrypted !== "plaintext") {
-      throw new MatrixError("Room security is encrypted or unknown. Nothing was sent.");
+  #plaintextRoomId(room) {
+    if (!room || room.encrypted !== "plaintext" ||
+        typeof room.id !== "string" || !/^![^:\s]+:[^\s]+$/u.test(room.id) ||
+        room.id.length > 255) {
+      throw new MatrixError("Room security or identity is invalid. Nothing was sent.");
     }
-    // Never use the cached room security state as authority on read or send.
-    const current = await this.#encryptionState(room.id);
-    if (current !== "plaintext") {
+    return room.id;
+  }
+
+  async #requireFreshPlaintext(room, expectedRoomId) {
+    if (!room || room.id !== expectedRoomId) {
+      throw new MatrixError("Room identity changed during security check. Nothing was sent.");
+    }
+    if (room.encrypted !== "plaintext") {
+      throw new MatrixError("Room encryption changed or cannot be verified. Nothing was sent.");
+    }
+    // Check one immutable destination across every awaited request. A mutable
+    // UI room object must not redirect a send or mix unrelated timelines.
+    const current = await this.#encryptionState(expectedRoomId);
+    if (!room || room.id !== expectedRoomId) {
+      throw new MatrixError("Room identity changed during security check. Nothing was sent.");
+    }
+    if (room.encrypted !== "plaintext" || current !== "plaintext") {
       throw new MatrixError("Room encryption changed or cannot be verified. Nothing was sent.");
     }
   }
 
   async readMessages(room, ownUserId = "") {
-    await this.#requireFreshPlaintext(room);
-    const result = await this.#call("rooms/" + encodeURIComponent(room.id) + "/messages?dir=b&limit=40");
-    // The room may have become encrypted while the timeline request was in
-    // flight. Never expose a stale plaintext response without checking again.
+    const roomId = this.#plaintextRoomId(room);
+    await this.#requireFreshPlaintext(room, roomId);
+    const result = await this.#call("rooms/" + encodeURIComponent(roomId) + "/messages?dir=b&limit=40");
+    // The room may have become encrypted or switched while its timeline was
+    // in flight. Never expose that response without rechecking the same room.
     // This remains a non-atomic development-only safeguard, not E2EE.
-    await this.#requireFreshPlaintext(room);
+    await this.#requireFreshPlaintext(room, roomId);
     if (!Array.isArray(result.chunk)) throw new MatrixError("Invalid homeserver timeline");
     return result.chunk.filter(e => e.type === "m.room.message" &&
         e.content?.msgtype === "m.text" && typeof e.content.body === "string")
@@ -157,10 +174,11 @@ export class MatrixPlaintextSession {
     if (typeof txnId !== "string" || !/^[a-zA-Z0-9-]{8,128}$/.test(txnId)) {
       throw new MatrixError("Invalid idempotency transaction ID");
     }
-    await this.#requireFreshPlaintext(room);
-    // Reuse this txnId when retrying. A state change after the check remains
-    // a TOCTOU risk: use the Rust E2EE SDK for confidential communications.
-    return this.#call("rooms/" + encodeURIComponent(room.id) +
+    const roomId = this.#plaintextRoomId(room);
+    await this.#requireFreshPlaintext(room, roomId);
+    // Send only to the checked room. A server-side encryption-state change
+    // after this request remains non-atomic: use E2EE for confidential DATA.
+    return this.#call("rooms/" + encodeURIComponent(roomId) +
       "/send/m.room.message/" + encodeURIComponent(txnId), {
         method: "PUT", body: { msgtype: "m.text", body: message }
       });
