@@ -122,7 +122,7 @@ export class MatrixPlaintextSession {
 
   #plaintextRoomId(room) {
     if (!room || room.encrypted !== "plaintext" ||
-        typeof room.id !== "string" || !/^![^:\\s]+:[^\\s]+$/u.test(room.id) ||
+        typeof room.id !== "string" || !/^![^:\s]+:[^\s]+$/u.test(room.id) ||
         room.id.length > 255) {
       throw new MatrixError("Room security or identity is invalid. Nothing was sent.");
     }
