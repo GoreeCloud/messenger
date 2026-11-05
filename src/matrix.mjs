@@ -130,14 +130,20 @@ export class MatrixPlaintextSession {
   }
 
   async #requireFreshPlaintext(room, expectedRoomId) {
-    if (this.#plaintextRoomId(room) !== expectedRoomId) {
+    if (!room || room.id !== expectedRoomId) {
       throw new MatrixError("Room identity changed during security check. Nothing was sent.");
+    }
+    if (room.encrypted !== "plaintext") {
+      throw new MatrixError("Room encryption changed or cannot be verified. Nothing was sent.");
     }
     // Check one immutable destination across every awaited request. A mutable
     // UI room object must not redirect a send or mix unrelated timelines.
     const current = await this.#encryptionState(expectedRoomId);
-    if (this.#plaintextRoomId(room) !== expectedRoomId || current !== "plaintext") {
-      throw new MatrixError("Room identity or encryption changed or cannot be verified. Nothing was sent.");
+    if (!room || room.id !== expectedRoomId) {
+      throw new MatrixError("Room identity changed during security check. Nothing was sent.");
+    }
+    if (room.encrypted !== "plaintext" || current !== "plaintext") {
+      throw new MatrixError("Room encryption changed or cannot be verified. Nothing was sent.");
     }
   }
 
