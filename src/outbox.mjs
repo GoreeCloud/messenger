@@ -36,7 +36,8 @@ export class InMemoryOutbox {
       throw new OutboxError("Invalid transaction ID");
     }
 
-    const key = JSON.stringify([room.id, txnId]);
+    const roomId = room.id;
+    const key = JSON.stringify([roomId, txnId]);
     let record = this.#entries.get(key);
     if (record && record.text !== text) {
       throw new OutboxError("Transaction ID reuse with changed content was blocked");
@@ -53,8 +54,16 @@ export class InMemoryOutbox {
 
     const request = Promise.resolve().then(() => {
       if (this.#closed) throw new OutboxError("Outbox session is closed");
+      if (room.id !== roomId || room.encrypted !== "plaintext") {
+        throw new OutboxError("Room changed before the plaintext transport could send");
+      }
       record.status = "sending";
-      return this.#transport.sendPlaintext(room, text, txnId, { allowPlaintext: true });
+      // Pass an immutable destination, not the caller's mutable UI room.
+      // MatrixPlaintextSession separately checks the server's room state.
+      return this.#transport.sendPlaintext(
+        Object.freeze({ id: roomId, encrypted: "plaintext" }),
+        text, txnId, { allowPlaintext: true }
+      );
     }).then(receipt => {
       if (this.#closed) throw new OutboxError("Outbox session is closed");
       // Unconfirmed/invalid acknowledgments remain retriable with the SAME id.
