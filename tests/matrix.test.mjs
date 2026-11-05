@@ -102,7 +102,7 @@ test("mutable room identity cannot redirect a plaintext PUT after the security c
     });
     await assert.rejects(
       session.sendPlaintext(room, "sensitive", "txn-12345678", { allowPlaintext: true }),
-      /Room identity or encryption changed/
+      /Room (identity|encryption) changed/
     );
     assert.equal(calls.length, 1, "No PUT may follow a changed room");
     assert.match(calls[0].url, /original%3Aexample\.org/);
@@ -141,7 +141,7 @@ test("malformed Matrix room identity is rejected before network access", async (
     homeserver: "https://matrix.example.org", accessToken: "fixture",
     fetchImpl: async () => { network++; return fake(404); }
   });
-  for (const id of ["!room", "!room name:example.org", "!room:example.org\\nInjected", "", "!x:"]) {
+  for (const id of ["!room", "!room name:example.org", "!room:example.org\nInjected", "", "!x:"]) {
     await assert.rejects(
       session.sendPlaintext({ id, encrypted: "plaintext" },
         "hello", "txn-12345678", { allowPlaintext: true }), MatrixError);
