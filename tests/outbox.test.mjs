@@ -103,8 +103,8 @@ test("untrusted Matrix room identifiers never reach the plaintext transport", ()
     transport: { sendPlaintext: () => { calls++; return { event_id: "$unexpected" }; } }
   });
   for (const id of [
-    "not-a-room", "!missing-suffix", "!x:", "!x:server\\nname",
-    "!x:server\\rname", "!x:" + "a".repeat(253), "!x:\\u0000",
+    "not-a-room", "!missing-suffix", "!x:", "!x:server\nname",
+    "!x:server\rname", "!x:" + "a".repeat(253), "!x:\u0000",
   ]) {
     assert.throws(() => outbox.dispatch({
       room: { id, encrypted: "plaintext" }, text: "private",
@@ -116,7 +116,7 @@ test("untrusted Matrix room identifiers never reach the plaintext transport", ()
 
 test("missing, control-bearing and oversized event IDs never confirm delivery", async () => {
   for (const eventId of [
-    "$", "not-an-event", "$valid\\nnot-safe", "$valid\\tstill-not-safe",
+    "$", "not-an-event", "$valid\nnot-safe", "$valid\tstill-not-safe",
     "$" + "x".repeat(512), null, 42,
   ]) {
     const outbox = new InMemoryOutbox({
