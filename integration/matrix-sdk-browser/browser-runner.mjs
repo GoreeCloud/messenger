@@ -5,12 +5,13 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname, sep, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
+import { waitForChromiumDebugPort } from "./chromium-startup.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "dist");
 const profile = mkdtempSync(join(tmpdir(), "goreecloud-rust-idb-"));
@@ -93,15 +94,15 @@ try {
     "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check",
     "--remote-debugging-port=0", "--remote-allow-origins=*",
     "--user-data-dir=" + profile, "about:blank"], { stdio: "ignore" });
-  let debugPort = 0;
-  for (let n = 0; n < 100; n++) {
-    try { debugPort = Number(readFileSync(join(profile, "DevToolsActivePort"),
-      "utf8").split("\n")[0]); if (debugPort) break; }
-    catch { /* starting Chromium */ }
-    if (browser.exitCode !== null) throw Error("Chromium terminated before debug connection");
-    await sleep(100);
-  }
-  assert.ok(debugPort, "Chromium remote debugging did not start");
+  // Hosted CI can be loaded after the large Rust/WASM build. Wait up to a
+  // bounded 24 seconds for this fresh Chrome profile, fail early on exit, and
+  // never re-use a stale debug port or expose raw child stderr.
+  let spawnFailed = false;
+  browser.once("error", () => { spawnFailed = true; });
+  const debugPort = await waitForChromiumDebugPort({
+    profile,
+    hasExited: () => spawnFailed || browser.exitCode !== null || browser.signalCode !== null
+  });
   const targets = await (await fetch("http://127.0.0.1:" + debugPort + "/json/list")).json();
   const page = targets.find(x => x.type === "page");
   assert.ok(page?.webSocketDebuggerUrl, "No Chromium page target");
