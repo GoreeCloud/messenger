@@ -8,8 +8,8 @@
  */
 // Room/event IDs are opaque but must stay bounded and free of control text.
 // Legacy Matrix event IDs may contain a server suffix; modern IDs are opaque.
-const ROOM_ID = /^![^:\\s\\u0000-\\u001f\\u007f]+:[^\\s\\u0000-\\u001f\\u007f]+$/u;
-const EVENT_ID = /^\\$[\\x21-\\x7e]{1,511}$/u;
+const ROOM_ID = /^![^:\s\u0000-\u001f\u007f]+:[^\s\u0000-\u001f\u007f]+$/u;
+const EVENT_ID = /^\$[\x21-\x7e]{1,511}$/u;
 
 export class OutboxError extends Error {
   constructor(message) { super(message); this.name = "OutboxError"; }
