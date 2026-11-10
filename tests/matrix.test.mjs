@@ -40,6 +40,28 @@ test("control characters in Matrix token are rejected before HTTP headers", () =
   }
 });
 
+test("discovery omits malformed or oversized room identifiers before follow-up requests", async () => {
+  let calls = 0;
+  const valid = "!room:example.org";
+  const session = new MatrixPlaintextSession({
+    homeserver: "https://matrix.example.org", accessToken: "fixture",
+    fetchImpl: async () => {
+      calls++;
+      return fake(200, { joined_rooms: [
+        valid, valid, "!missing-colon", "!x:", "!whitespace:example.org\nprivate",
+        "!".concat("a".repeat(260), ":example.org"), null, 99
+      ] });
+    }
+  });
+  assert.deepEqual(await session.listRooms(), [valid]);
+  assert.equal(calls, 1);
+  for (const id of ["!missing-colon", "!x:", "!".concat("x".repeat(256), ":example.org")]) {
+    await assert.rejects(session.inspectRoom(id), /Invalid room ID/);
+  }
+  assert.equal(calls, 1, "malformed room IDs must not initiate a second HTTP request");
+  session.close();
+});
+
 test("encrypted or unknown rooms are blocked before any send or read", async () => {
   let calls = 0;
   const session = new MatrixPlaintextSession({
@@ -186,6 +208,28 @@ test("read messages rechecks room state, filters text, and identifies own messag
   assert.equal(events[1].own, true);
   assert.equal(calls.length, 3, "Timeline must recheck encryption state after fetching");
 });
+test("malformed null timeline entries are ignored without losing valid plaintext messages", async () => {
+  let calls = 0;
+  const session = new MatrixPlaintextSession({
+    homeserver: "https://matrix.example.org", accessToken: "fixture",
+    fetchImpl: async url => {
+      calls++;
+      return url.endsWith("/state/m.room.encryption") ? fake(404) : fake(200, {
+        chunk: [null, undefined, false, 42, {}, { type: "m.room.message" },
+          { type: "m.room.message", content: null },
+          { type: "m.room.message", event_id: "$valid", sender: "@peer:example.org",
+            content: { msgtype: "m.text", body: "safe" }, origin_server_ts: 1234 }]
+      });
+    }
+  });
+  const messages = await session.readMessages({
+    id: "!room:example.org", encrypted: "plaintext"
+  });
+  assert.equal(calls, 3, "room encryption still requires post-timeline verification");
+  assert.deepEqual(messages.map(message => message.text), ["safe"]);
+  session.close();
+});
+
 test("plaintext timeline is blocked if room becomes encrypted during fetch", async () => {
   const calls = [];
   const session = new MatrixPlaintextSession({
