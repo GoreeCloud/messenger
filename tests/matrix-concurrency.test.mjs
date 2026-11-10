@@ -3,10 +3,7 @@ import assert from "node:assert/strict";
 import { MatrixError, MatrixPlaintextSession } from "../src/matrix.mjs";
 
 function response() {
-  return {
-    ok: true, status: 200,
-    async json() { return { user_id: "@fixture:example.org" }; }
-  };
+  return Response.json({ user_id: "@fixture:example.org" });
 }
 
 test("limits one Matrix session to eight outstanding requests without a ninth fetch", async () => {

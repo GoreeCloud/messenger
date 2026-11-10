@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { MatrixPlaintextSession, MatrixError, validateHomeserver } from "../src/matrix.mjs";
 function fake(status, payload = {}) {
-  return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
+  return Response.json(payload, { status });
 }
 test("rejects insecure origins, embedded secrets, paths, and unsupported schemes", () => {
   for (const url of [
