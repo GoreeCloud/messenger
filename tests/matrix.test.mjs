@@ -49,13 +49,17 @@ test("discovery omits malformed or oversized room identifiers before follow-up r
       calls++;
       return fake(200, { joined_rooms: [
         valid, valid, "!missing-colon", "!x:", "!whitespace:example.org\nprivate",
+        "!reversed\u202e:example.org", "!bad\u0000:example.org",
+        "!bad\u0085:example.org",
         "!".concat("a".repeat(260), ":example.org"), null, 99
       ] });
     }
   });
   assert.deepEqual(await session.listRooms(), [valid]);
   assert.equal(calls, 1);
-  for (const id of ["!missing-colon", "!x:", "!".concat("x".repeat(256), ":example.org")]) {
+  for (const id of ["!missing-colon", "!x:", "!reversed\u202e:example.org",
+                   "!bad\u0000:example.org", "!bad\u0085:example.org",
+                   "!".concat("x".repeat(256), ":example.org")]) {
     await assert.rejects(session.inspectRoom(id), /Invalid room ID/);
   }
   assert.equal(calls, 1, "malformed room IDs must not initiate a second HTTP request");
@@ -208,6 +212,38 @@ test("read messages rechecks room state, filters text, and identifies own messag
   assert.equal(events[1].own, true);
   assert.equal(calls.length, 3, "Timeline must recheck encryption state after fetching");
 });
+test("untrusted Matrix senders cannot inject bidi controls or spoof own-message UI", async () => {
+  const own = "@self:example.org";
+  const senderValues = [
+    ["@valid:example.org", "@valid:example.org"],
+    ["@self\u202e:example.org", "Unknown"],
+    ["@spoof\u2066:example.org", "Unknown"],
+    ["@bad\u0000:example.org", "Unknown"],
+    ["@bad\u0085:example.org", "Unknown"],
+    ["not-a-matrix-user", "Unknown"],
+    [null, "Unknown"],
+    [own, own]
+  ];
+  const session = new MatrixPlaintextSession({
+    homeserver: "https://example.org", accessToken: "fixture",
+    fetchImpl: async url => url.endsWith("/state/m.room.encryption")
+      ? fake(404) : fake(200, { chunk: senderValues.map(([sender], i) => ({
+          event_id: "$" + i, sender, type: "m.room.message",
+          content: { msgtype: "m.text", body: "synthetic" }
+        })) })
+  });
+  const events = await session.readMessages(
+    { id: "!r:example.org", encrypted: "plaintext" }, own
+  );
+  assert.equal(events.length, senderValues.length);
+  for (const [i, [sender, label]] of senderValues.entries()) {
+    const message = events.find(event => event.id === "$" + i);
+    assert.equal(message.sender, label);
+    assert.equal(message.own, sender === own);
+  }
+  session.close();
+});
+
 test("malformed null timeline entries are ignored without losing valid plaintext messages", async () => {
   let calls = 0;
   const session = new MatrixPlaintextSession({

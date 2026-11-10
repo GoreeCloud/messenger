@@ -29,12 +29,15 @@ export function validateHomeserver(value) {
 
 // Apply the same bounded room-identifier grammar to discovery, state reads,
 // timelines and sends. Untrusted server room IDs are not API path templates.
+// Opaque Matrix identities remain otherwise Unicode-capable, but control
+// and bidi format code points cannot be used to spoof adjacent UI labels.
+const unsafeIdentityFormatting =
+  /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
 const validRoomId = value => typeof value === "string" && value.length <= 255 &&
-  /^![^:\s]+:[^\s]+$/u.test(value);
+  /^![^:\s]+:[^\s]+$/u.test(value) && !unsafeIdentityFormatting.test(value);
 
 const validUserId = value => typeof value === "string" && value.length <= 255 &&
-  /^@[^:\s]+:[^\s]+$/u.test(value) &&
-  !/[\u0000-\u001f\u007f]/u.test(value);
+  /^@[^:\s]+:[^\s]+$/u.test(value) && !unsafeIdentityFormatting.test(value);
 
 // Admission is local to one session. Rejected requests never acquire a network slot.
 const MAX_CONCURRENT_MATRIX_REQUESTS = 8;
@@ -258,10 +261,11 @@ export class MatrixPlaintextSession {
         e.type === "m.room.message" &&
         e.content?.msgtype === "m.text" && typeof e.content.body === "string")
       .slice(0, 40).reverse().map(e => ({
-        id: String(e.event_id || ""), sender: String(e.sender || "Unknown"),
+        id: String(e.event_id || ""),
+        sender: validUserId(e.sender) ? e.sender : "Unknown",
         text: e.content.body.slice(0, 16000), protocol: "DATA", encrypted: false,
         timestamp: Number.isFinite(e.origin_server_ts) ? e.origin_server_ts : Date.now(),
-        own: e.sender === ownUserId && ownUserId.length > 0
+        own: validUserId(ownUserId) && validUserId(e.sender) && e.sender === ownUserId
       }));
   }
 
