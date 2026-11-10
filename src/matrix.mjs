@@ -27,6 +27,9 @@ export function validateHomeserver(value) {
   return url.origin;
 }
 
+// Admission is local to one session. Rejected requests never acquire a network slot.
+const MAX_CONCURRENT_MATRIX_REQUESTS = 8;
+
 export class MatrixPlaintextSession {
   #base;
   #token;
@@ -49,6 +52,9 @@ export class MatrixPlaintextSession {
 
   async #call(path, { method = "GET", body } = {}) {
     if (this.#closed) throw new MatrixError("Session closed");
+    if (this.#controllers.size >= MAX_CONCURRENT_MATRIX_REQUESTS) {
+      throw new MatrixError("Too many concurrent Matrix requests. Retry shortly.");
+    }
     const controller = new AbortController();
     this.#controllers.add(controller);
     const timer = setTimeout(() => controller.abort(), 12000);
