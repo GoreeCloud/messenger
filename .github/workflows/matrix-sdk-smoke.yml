@@ -19,8 +19,10 @@ jobs:
       run:
         working-directory: integration/matrix-sdk-smoke
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
       - name: Install locked SDK dependencies without lifecycle scripts
@@ -30,7 +32,7 @@ jobs:
       - name: Initialize actual Rust/WASM SDK crypto in Node memory
         run: npm run smoke
       - name: Retain verified committed lockfile for provenance review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: matrix-sdk-45-probe-lockfile
           path: integration/matrix-sdk-smoke/package-lock.json
