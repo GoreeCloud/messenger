@@ -62,3 +62,35 @@ test('concurrent release calls remain pending until Web Locks provider confirms 
   assert.equal(early, true);
   await lease.release();
 });
+
+test('broken lock providers cannot leave acquisition awaiting forever', async () => {
+  await assert.rejects(
+    acquireCryptoStoreLease({ locks: { request: () => new Promise(() => {}) }, timeoutMs: 25 }),
+    /Timed out acquiring/
+  );
+  await assert.rejects(
+    acquireCryptoStoreLease({ locks: { request: async () => {} }, timeoutMs: 50 }),
+    /returned without granting/
+  );
+});
+
+test('late grants after a deadline do not hold a crypto store lock', async () => {
+  let grant;
+  const locks = { request(_name, _options, callback) {
+    grant = callback;
+    return new Promise(() => {});
+  }};
+  await assert.rejects(acquireCryptoStoreLease({ locks, timeoutMs: 25 }), /Timed out acquiring/);
+  assert.equal(typeof grant, 'function');
+  // This must settle immediately; a late callback must not create an orphaned hold.
+  assert.equal(await grant({ name: 'late' }), undefined);
+});
+
+test('invalid lock deadlines fail before touching a provider', async () => {
+  let calls = 0;
+  const locks = { request() { calls++; } };
+  for (const timeoutMs of [0, -1, 19, 30001, NaN, Infinity, 2.5, '50']) {
+    await assert.rejects(acquireCryptoStoreLease({ locks, timeoutMs }), TypeError);
+  }
+  assert.equal(calls, 0);
+});
