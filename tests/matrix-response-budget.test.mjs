@@ -85,3 +85,31 @@ test("Matrix JSON reader rejects pathological streams of thousands of tiny chunk
     error instanceof MatrixError && /safe chunk limit/.test(error.message));
   session.close();
 });
+
+test("valid non-object Matrix JSON is denied without raw TypeErrors or payload leaks", async () => {
+  for (const raw of ["null", "false", "42", "[]", '"private server data"']) {
+    const session = sessionFor(async () => new Response(raw, { status: 200 }));
+    await assert.rejects(session.whoami(), error =>
+      error instanceof MatrixError && /invalid JSON object/.test(error.message) &&
+      !error.message.includes("private"));
+    session.close();
+  }
+});
+
+test("homeserver account identity must be a bounded Matrix user ID", async () => {
+  const malformed = [
+    "@", "@missing-colon", "@:example.org", "@alice:",
+    "@alice:example.org\nprivate",
+    "@alice:example.org" + String.fromCharCode(0),
+    "@" + "a".repeat(255) + ":example.org", null, 99
+  ];
+  for (const user_id of malformed) {
+    const session = sessionFor(async () => Response.json({ user_id }));
+    await assert.rejects(session.whoami(), error =>
+      error instanceof MatrixError && /valid Matrix account identity/.test(error.message));
+    session.close();
+  }
+  const session = sessionFor(async () => Response.json({ user_id: "@alice:example.org:8448" }));
+  assert.equal(await session.whoami(), "@alice:example.org:8448");
+  session.close();
+});
