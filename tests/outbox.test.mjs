@@ -96,3 +96,51 @@ test("invalid homeserver acknowledgment remains a retryable unknown delivery", a
   assert.deepEqual(await outbox.dispatch(args), { event_id: "$ok" });
   assert.equal(attempts, 2);
 });
+
+test("untrusted Matrix room identifiers never reach the plaintext transport", () => {
+  let calls = 0;
+  const outbox = new InMemoryOutbox({
+    transport: { sendPlaintext: () => { calls++; return { event_id: "$unexpected" }; } }
+  });
+  for (const id of [
+    "not-a-room", "!missing-suffix", "!x:", "!x:server\nname",
+    "!x:server\rname", "!x:" + "a".repeat(253), "!x:\u0000",
+  ]) {
+    assert.throws(() => outbox.dispatch({
+      room: { id, encrypted: "plaintext" }, text: "private",
+      txnId: "safe-txn-123", allowPlaintext: true,
+    }), /not approved/);
+  }
+  assert.equal(calls, 0);
+});
+
+test("missing, control-bearing and oversized event IDs never confirm delivery", async () => {
+  for (const eventId of [
+    "$", "not-an-event", "$valid\nnot-safe", "$valid\tstill-not-safe",
+    "$" + "x".repeat(512), null, 42,
+  ]) {
+    const outbox = new InMemoryOutbox({
+      transport: { sendPlaintext: async () => ({ event_id: eventId }) }
+    });
+    const args = { room, text: "retry after invalid ack",
+      txnId: "stable-ack-123", allowPlaintext: true };
+    await assert.rejects(outbox.dispatch(args), /valid event ID/);
+    assert.equal(outbox.getStatus(room.id, args.txnId), "failed");
+  }
+});
+
+test("valid acknowledgments retain only bounded immutable event identity", async () => {
+  const response = { event_id: "$event:example.org", unexpected_secret: "not-retained" };
+  let calls = 0;
+  const outbox = new InMemoryOutbox({
+    transport: { sendPlaintext: async () => { calls++; return response; } }
+  });
+  const args = { room, text: "one send", txnId: "stable-id-345", allowPlaintext: true };
+  const receipt = await outbox.dispatch(args);
+  assert.deepEqual(receipt, { event_id: "$event:example.org" });
+  assert.ok(Object.isFrozen(receipt));
+  assert.equal("unexpected_secret" in receipt, false);
+  response.event_id = "$forged-late";
+  assert.deepEqual(await outbox.dispatch(args), { event_id: "$event:example.org" });
+  assert.equal(calls, 1);
+});
