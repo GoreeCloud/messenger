@@ -100,6 +100,29 @@ async function readBoundedMatrixJson(response) {
   return parsed;
 }
 
+// Matrix room names come from a homeserver and are only display labels.
+// Bound by Unicode code points (not UTF-16 slices) and drop formatting
+// controls so a malicious name cannot reverse or split adjacent UI text.
+function safeRoomDisplayName(raw, fallback) {
+  if (typeof raw !== "string") return fallback;
+  let text = "";
+  let count = 0;
+  for (const char of raw) {
+    if (count >= 100) break;
+    const code = char.codePointAt(0);
+    if (code >= 0xd800 && code <= 0xdfff) continue;
+    const isControl = (code <= 0x1f) || (code >= 0x7f && code <= 0x9f) ||
+      code === 0x061c || code === 0x200e || code === 0x200f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069);
+    const display = isControl ? " " : char;
+    if (display === " " && text.endsWith(" ")) continue;
+    text += display;
+    count++;
+  }
+  return text.trim() || fallback;
+}
+
 export class MatrixPlaintextSession {
   #base;
   #token;
@@ -189,7 +212,7 @@ export class MatrixPlaintextSession {
     let name = roomId;
     try {
       const event = await this.#call("rooms/" + encodeURIComponent(roomId) + "/state/m.room.name");
-      if (typeof event?.name === "string" && event.name.trim()) name = event.name.trim().slice(0, 100);
+      name = safeRoomDisplayName(event?.name, roomId);
     } catch (error) {
       if (!(error instanceof MatrixError && error.status === 404)) throw error;
     }

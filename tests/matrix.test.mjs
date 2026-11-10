@@ -313,3 +313,32 @@ test("fetch implementations requiring a global receiver work as in browsers", as
   assert.equal(calls, 1);
   session.close();
 });
+
+test("homeserver room titles cannot inject bidi controls or split Unicode", async () => {
+  const roomId = "!room:example.org";
+  const cases = [
+    [" \u202eHidden\u2069 \nReal\u0000 ", "Hidden Real"],
+    ["x".repeat(99) + "😀" + "after-cutoff", "x".repeat(99) + "😀"],
+    ["\ud800 C", "C"],
+    ["\u202e\u2069\n", roomId],
+    [null, roomId]
+  ];
+  for (const [untrusted, expected] of cases) {
+    let calls = 0;
+    const session = new MatrixPlaintextSession({
+      homeserver: "https://example.org", accessToken: "synthetic",
+      fetchImpl: async url => {
+        calls++;
+        if (url.endsWith("/state/m.room.encryption")) return fake(404);
+        assert.ok(url.endsWith("/state/m.room.name"));
+        return fake(200, { name: untrusted });
+      }
+    });
+    const room = await session.inspectRoom(roomId);
+    assert.equal(room.id, roomId);
+    assert.equal(room.encrypted, "plaintext");
+    assert.equal(room.name, expected);
+    assert.equal(calls, 2);
+    session.close();
+  }
+});
