@@ -29,6 +29,56 @@ export function validateHomeserver(value) {
 
 // Admission is local to one session. Rejected requests never acquire a network slot.
 const MAX_CONCURRENT_MATRIX_REQUESTS = 8;
+// The development preview requests at most 40 text messages per page. Bound
+// decoded, streamed response bytes before UTF-8 decoding or JSON.parse, not
+// merely a server-declared Content-Length (which may be absent or dishonest).
+const MAX_MATRIX_JSON_BYTES = 1024 * 1024;
+
+async function readBoundedMatrixJson(response) {
+  const declared = response?.headers?.get?.("content-length");
+  if (typeof declared === "string" && /^[0-9]+$/.test(declared) &&
+      Number(declared) > MAX_MATRIX_JSON_BYTES) {
+    throw new MatrixError("Homeserver response exceeds the safe size limit");
+  }
+  if (!response?.body || typeof response.body.getReader !== "function") {
+    throw new MatrixError("Homeserver response is missing a readable JSON body");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) {
+        throw new MatrixError("Homeserver returned an invalid response stream");
+      }
+      bytes += value.byteLength;
+      if (bytes > MAX_MATRIX_JSON_BYTES) {
+        throw new MatrixError("Homeserver response exceeds the safe size limit");
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    // Cancel without awaiting an uncooperative stream; the parent AbortSignal
+    // remains subject to the existing 12-second request deadline.
+    try { void Promise.resolve(reader.cancel()).catch(() => {}); } catch {}
+    throw error;
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+  const data = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    data.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
+  } catch {
+    throw new MatrixError("Homeserver returned malformed UTF-8 JSON");
+  }
+}
 
 export class MatrixPlaintextSession {
   #base;
@@ -74,7 +124,7 @@ export class MatrixPlaintextSession {
       });
       if (this.#closed) throw new MatrixError("Session closed");
       if (!response.ok) throw new MatrixError("Matrix request failed (" + response.status + ")", response.status);
-      const result = await response.json();
+      const result = await readBoundedMatrixJson(response);
       if (this.#closed) throw new MatrixError("Session closed");
       return result;
     } catch (error) {
