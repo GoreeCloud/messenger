@@ -33,6 +33,7 @@ const MAX_CONCURRENT_MATRIX_REQUESTS = 8;
 // decoded, streamed response bytes before UTF-8 decoding or JSON.parse, not
 // merely a server-declared Content-Length (which may be absent or dishonest).
 const MAX_MATRIX_JSON_BYTES = 1024 * 1024;
+const MAX_MATRIX_JSON_CHUNKS = 4096; // refuse pathological tiny-fragment streams
 
 async function readBoundedMatrixJson(response) {
   const declared = response?.headers?.get?.("content-length");
@@ -52,6 +53,9 @@ async function readBoundedMatrixJson(response) {
       if (done) break;
       if (!(value instanceof Uint8Array)) {
         throw new MatrixError("Homeserver returned an invalid response stream");
+      }
+      if (chunks.length >= MAX_MATRIX_JSON_CHUNKS) {
+        throw new MatrixError("Homeserver response exceeds the safe chunk limit");
       }
       bytes += value.byteLength;
       if (bytes > MAX_MATRIX_JSON_BYTES) {
