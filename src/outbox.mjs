@@ -6,6 +6,11 @@
  * This reduces duplicate sends but cannot guarantee exactly-once delivery
  * across crashes, devices, expired homeserver idempotency windows or outages.
  */
+// Room/event IDs are opaque but must stay bounded and free of control text.
+// Legacy Matrix event IDs may contain a server suffix; modern IDs are opaque.
+const ROOM_ID = /^![^:\\s\\u0000-\\u001f\\u007f]+:[^\\s\\u0000-\\u001f\\u007f]+$/u;
+const EVENT_ID = /^\\$[\\x21-\\x7e]{1,511}$/u;
+
 export class OutboxError extends Error {
   constructor(message) { super(message); this.name = "OutboxError"; }
 }
@@ -25,7 +30,9 @@ export class InMemoryOutbox {
 
   dispatch({ room, text, txnId, allowPlaintext = false } = {}) {
     if (this.#closed) throw new OutboxError("Outbox session is closed");
-    if (!room || typeof room.id !== "string" || room.encrypted !== "plaintext") {
+    const roomId = room?.id;
+    if (typeof roomId !== "string" || roomId.length > 255 ||
+        !ROOM_ID.test(roomId) || room.encrypted !== "plaintext") {
       throw new OutboxError("The selected room is not approved for plaintext");
     }
     if (!allowPlaintext) throw new OutboxError("Session consent is required");
@@ -36,7 +43,6 @@ export class InMemoryOutbox {
       throw new OutboxError("Invalid transaction ID");
     }
 
-    const roomId = room.id;
     const key = JSON.stringify([roomId, txnId]);
     let record = this.#entries.get(key);
     if (record && record.text !== text) {
@@ -68,12 +74,16 @@ export class InMemoryOutbox {
       if (this.#closed) throw new OutboxError("Outbox session is closed");
       // Unconfirmed/invalid acknowledgments remain retriable with the SAME id.
       // The provider may have accepted the send; never invent a new transaction.
-      if (typeof receipt?.event_id !== "string" || !receipt.event_id.startsWith("$")) {
+      const eventId = receipt?.event_id;
+      if (typeof eventId !== "string" || eventId.length > 512 ||
+          !EVENT_ID.test(eventId)) {
         throw new OutboxError("Homeserver did not acknowledge a valid event ID");
       }
       record.status = "sent";
-      record.receipt = receipt;
-      return receipt;
+      // Keep only the bounded identity required for later reconciliation;
+      // discard arbitrary extra provider fields and mutable receipt objects.
+      record.receipt = Object.freeze({ event_id: eventId });
+      return record.receipt;
     }).catch(error => {
       record.status = "failed";
       throw error;
