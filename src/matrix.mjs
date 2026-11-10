@@ -32,6 +32,10 @@ export function validateHomeserver(value) {
 const validRoomId = value => typeof value === "string" && value.length <= 255 &&
   /^![^:\s]+:[^\s]+$/u.test(value);
 
+const validUserId = value => typeof value === "string" && value.length <= 255 &&
+  /^@[^:\s]+:[^\s]+$/u.test(value) &&
+  !/[\u0000-\u001f\u007f]/u.test(value);
+
 // Admission is local to one session. Rejected requests never acquire a network slot.
 const MAX_CONCURRENT_MATRIX_REQUESTS = 8;
 // The development preview requests at most 40 text messages per page. Bound
@@ -82,11 +86,18 @@ async function readBoundedMatrixJson(response) {
     data.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  let parsed;
   try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
+    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(data));
   } catch {
     throw new MatrixError("Homeserver returned malformed UTF-8 JSON");
   }
+  // Matrix client endpoints handled by this preview require JSON objects.
+  // A valid primitive or array must not escape as a raw TypeError in callers.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new MatrixError("Homeserver returned an invalid JSON object");
+  }
+  return parsed;
 }
 
 export class MatrixPlaintextSession {
@@ -149,7 +160,7 @@ export class MatrixPlaintextSession {
 
   async whoami() {
     const result = await this.#call("account/whoami");
-    if (typeof result.user_id !== "string" || !result.user_id.startsWith("@")) {
+    if (!validUserId(result.user_id)) {
       throw new MatrixError("The server did not return a valid Matrix account identity");
     }
     return result.user_id;
