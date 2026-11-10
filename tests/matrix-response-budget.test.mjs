@@ -72,3 +72,16 @@ test("a rejected response frees the bounded Matrix concurrency admission slot", 
   assert.equal(count, 2);
   session.close();
 });
+
+test("Matrix JSON reader rejects pathological streams of thousands of tiny chunks", async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      for (let i = 0; i < 4097; i++) controller.enqueue(Uint8Array.of(0x20));
+      controller.close();
+    }
+  });
+  const session = sessionFor(async () => new Response(body, { status: 200 }));
+  await assert.rejects(session.whoami(), error =>
+    error instanceof MatrixError && /safe chunk limit/.test(error.message));
+  session.close();
+});
