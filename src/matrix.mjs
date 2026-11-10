@@ -27,6 +27,11 @@ export function validateHomeserver(value) {
   return url.origin;
 }
 
+// Apply the same bounded room-identifier grammar to discovery, state reads,
+// timelines and sends. Untrusted server room IDs are not API path templates.
+const validRoomId = value => typeof value === "string" && value.length <= 255 &&
+  /^![^:\s]+:[^\s]+$/u.test(value);
+
 // Admission is local to one session. Rejected requests never acquire a network slot.
 const MAX_CONCURRENT_MATRIX_REQUESTS = 8;
 
@@ -98,11 +103,11 @@ export class MatrixPlaintextSession {
   async listRooms() {
     const result = await this.#call("joined_rooms");
     if (!Array.isArray(result.joined_rooms)) throw new MatrixError("Invalid homeserver room list");
-    return [...new Set(result.joined_rooms.filter(r => typeof r === "string" && r.startsWith("!")))].slice(0, 40);
+    return [...new Set(result.joined_rooms.filter(validRoomId))].slice(0, 40);
   }
 
   async #encryptionState(roomId) {
-    if (typeof roomId !== "string" || !roomId.startsWith("!")) throw new MatrixError("Invalid room ID");
+    if (!validRoomId(roomId)) throw new MatrixError("Invalid room ID");
     try {
       const event = await this.#call("rooms/" + encodeURIComponent(roomId) + "/state/m.room.encryption");
       return typeof event?.algorithm === "string" && event.algorithm.length > 0
@@ -128,8 +133,7 @@ export class MatrixPlaintextSession {
 
   #plaintextRoomId(room) {
     if (!room || room.encrypted !== "plaintext" ||
-        typeof room.id !== "string" || !/^![^:\s]+:[^\s]+$/u.test(room.id) ||
-        room.id.length > 255) {
+        !validRoomId(room.id)) {
       throw new MatrixError("Room security or identity is invalid. Nothing was sent.");
     }
     return room.id;
@@ -162,7 +166,8 @@ export class MatrixPlaintextSession {
     // This remains a non-atomic development-only safeguard, not E2EE.
     await this.#requireFreshPlaintext(room, roomId);
     if (!Array.isArray(result.chunk)) throw new MatrixError("Invalid homeserver timeline");
-    return result.chunk.filter(e => e.type === "m.room.message" &&
+    return result.chunk.filter(e => e !== null && typeof e === "object" &&
+        e.type === "m.room.message" &&
         e.content?.msgtype === "m.text" && typeof e.content.body === "string")
       .slice(0, 40).reverse().map(e => ({
         id: String(e.event_id || ""), sender: String(e.sender || "Unknown"),
