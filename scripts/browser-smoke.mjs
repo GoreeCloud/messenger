@@ -172,17 +172,42 @@ try {
   browser = spawn(chrome, ['--headless=new', '--no-sandbox', '--disable-gpu',
     '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check',
     '--remote-debugging-port=0', '--remote-allow-origins=*',
-    '--user-data-dir=' + profile, 'about:blank'], { stdio: 'ignore' });
+    '--user-data-dir=' + profile, 'about:blank'],
+  { stdio: ['ignore', 'ignore', 'pipe'] });
+  // Hosted Chromium startup can take longer than ten seconds under runner
+  // contention. Preserve bounded diagnostics instead of hiding a real crash.
+  let chromeStartupError = null;
+  let chromeStderrTail = '';
+  browser.on('error', error => { chromeStartupError = error.code || 'launch_failure'; });
+  browser.stderr.on('data', data => {
+    chromeStderrTail = (chromeStderrTail + data.toString('utf8')).slice(-2048);
+  });
 
   let cdpPort = 0;
-  for (let n = 0; n < 100; n++) {
-    try { cdpPort = Number(readFileSync(join(profile, 'DevToolsActivePort'),
-      'utf8').split('\n')[0]); if (cdpPort) break; }
-    catch { /* Chrome still starting */ }
-    if (browser.exitCode !== null) throw new Error('Chrome exited before debug port was ready');
-    await sleep(100);
+  const startupDeadline = Date.now() + 30_000;
+  while (Date.now() < startupDeadline) {
+    try {
+      const candidate = readFileSync(join(profile, 'DevToolsActivePort'), 'utf8')
+        .split('\n')[0].trim();
+      if (/^\d{1,5}$/.test(candidate) && Number(candidate) <= 65535 &&
+          Number(candidate) > 0) {
+        cdpPort = Number(candidate);
+        break;
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    if (chromeStartupError || browser.exitCode !== null || browser.signalCode !== null) {
+      throw new Error('Chrome exited before DevTools became ready: ' +
+        (chromeStartupError || browser.exitCode || browser.signalCode) +
+        '; stderr tail: ' + chromeStderrTail);
+    }
+    await sleep(150);
   }
-  assert.ok(cdpPort > 0, 'Chrome debug port was not available');
+  if (cdpPort === 0) {
+    throw new Error('Chrome DevTools port unavailable after bounded 30s startup; ' +
+      'process exit=' + browser.exitCode + '; stderr tail: ' + chromeStderrTail);
+  }
   const targets = await (await fetch('http://127.0.0.1:' + cdpPort + '/json/list')).json();
   const tab = targets.find(t => t.type === 'page');
   assert.ok(tab?.webSocketDebuggerUrl, 'Chromium page target missing');
