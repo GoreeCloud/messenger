@@ -25,6 +25,12 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goreecloud-messenger-web-preview
+          path: web/dist/
+          retention-days: 7
+          if-no-files-found: error
   android:
     name: android
     runs-on: ubuntu-24.04
@@ -40,3 +46,9 @@ jobs:
           packages: "platform-tools platforms;android-36 build-tools;35.0.0"
       - run: chmod +x gradlew && ./gradlew :app:assembleDebug --no-daemon --console=plain
         working-directory: android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: goreecloud-messenger-android-debug-preview
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: error
