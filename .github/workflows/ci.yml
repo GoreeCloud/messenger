@@ -25,6 +25,11 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
+      - name: Hash and verify web preview artifacts
+        working-directory: web/dist
+        run: |
+          find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS
+          sha256sum --check SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: goreecloud-messenger-web-preview
@@ -48,10 +53,15 @@ jobs:
       - name: Build and test Android (retry only dependency HTTP 429)
         run: bash ../ci/retry_transient_gradle.sh ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
         working-directory: android
+      - name: Hash and verify Android debug preview APK
+        working-directory: android/app/build/outputs/apk/debug
+        run: |
+          sha256sum app-debug.apk > SHA256SUMS
+          sha256sum --check SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: goreecloud-messenger-android-debug-preview
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/
           retention-days: 7
           if-no-files-found: error
   backend:
