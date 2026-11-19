@@ -41,6 +41,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Test bounded Gradle rate-limit retry policy
+        run: python3 -m unittest discover -s ci/tests -v
       - name: Verify vendored Synapse tree and privacy defaults
         run: |
           python3 -m unittest discover -s deploy/tests -v
