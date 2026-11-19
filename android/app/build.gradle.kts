@@ -33,6 +33,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Official UniFFI/JNA bindings and native crypto; pinned to a published Maven release.
+    implementation("org.matrix.rustcomponents:sdk-android:26.11.17")
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -6,14 +6,14 @@
 - HTTPS homeserver required for web, with only localhost HTTP for browser development; Android requires HTTPS without exception.
 - No browser localStorage token or Android SharedPreferences token persistence.
 - Web initializes upstream Rust-backed Matrix crypto and blocks sending into rooms considered unencrypted. New rooms request encryption.
-- Android hides encrypted message bodies and disables all sends pending native audited crypto implementation.
+- Android now uses the upstream Matrix Rust SDK for room encryption, room timelines and encrypted sending. It refuses to send in plaintext rooms. **Actual E2EE interoperability and identity verification remain untested.**
 - Server dev preview binds to 127.0.0.1, not the public network.
 - Message and member text is rendered as text in React rather than remote HTML.
 - No intentional message/token analytics or debug logging.
 
 ### Blocking risks
 1. In-memory web device keys disappear on reload. Secret storage, verification, cross-signing and key recovery are missing.
-2. Native Android E2EE is not implemented; authentication and plain-room preview are not a secure alternative to a verified encrypted client.
+2. Android encryption code now uses Matrix Rust SDK but stores device/room keys only in memory. Restart loses keys; verified identity, cross-signing, secure key backup and real two-device integration are absent.
 3. Synapse development image is an external prebuilt artifact, not a verified build from this repository's upstream source.
 4. Browser XSS, malicious extensions, compromised endpoints or malicious participants can bypass plaintext confidentiality.
 5. Matrix and federation reveal metadata; bridging networks additionally breaks some end-to-end trust assumptions.
