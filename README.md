@@ -52,6 +52,10 @@ cd android
 
 The debug APK is generated at android/app/build/outputs/apk/debug/app-debug.apk when the build succeeds. Device testing and signed distribution remain outstanding.
 
+Passing GitHub Actions workflow runs also retain **development-only** web bundles and
+Android debug APKs for seven days as CI artifacts. These are unsigned-for-release
+preview outputs, not trusted production distributions.
+
 ## Platform alignment
 
 GoreeCloud UI provides the verified current alpha semantic colors, spacing and typography adaptation. GoreeShield owns consent, privacy, retention and minimization; Wardveil owns defensive security; GoreeCloud Mesh owns future opt-in interoperability; GoreeCloud Identity remains a future authenticated integration and is not falsely claimed to be running.
