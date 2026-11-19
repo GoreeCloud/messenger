@@ -1,0 +1,19 @@
+# ignore everything by default
+*
+
+# Things to include
+!docker
+!synapse
+!rust
+!README.rst
+!pyproject.toml
+!poetry.lock
+!Cargo.lock
+!Cargo.toml
+!build_rust.py
+
+# Things to re-ignore
+rust/target
+synapse/*.so
+
+**/__pycache__

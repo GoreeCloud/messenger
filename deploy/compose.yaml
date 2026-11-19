@@ -1,0 +1,13 @@
+name: goreecloud-messenger-dev
+services:
+  synapse:
+    image: matrixdotorg/synapse:v1.163.0
+    restart: "no"
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    ports:
+      - "127.0.0.1:8008:8008"
+    volumes:
+      - ./data/synapse:/data
+    security_opt:
+      - no-new-privileges:true

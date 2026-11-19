@@ -1,0 +1,348 @@
+#
+# This file is licensed under the Affero General Public License (AGPL) version 3.
+#
+# Copyright (C) 2023 New Vector, Ltd
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# See the GNU Affero General Public License for more details:
+# <https://www.gnu.org/licenses/agpl-3.0.html>.
+#
+# Originally licensed under the Apache License, Version 2.0:
+# <http://www.apache.org/licenses/LICENSE-2.0>.
+#
+# [This file includes modifications made by New Vector Limited]
+#
+#
+
+
+from typing import Any
+
+import yaml
+from parameterized import parameterized
+
+from synapse.config._base import ConfigError, RootConfig
+from synapse.config.homeserver import HomeServerConfig
+from synapse.config.server import ServerConfig, generate_ip_set, is_threepid_reserved
+from synapse.types import JsonDict
+
+from tests import unittest
+
+
+class ServerConfigTestCase(unittest.TestCase):
+    def test_is_threepid_reserved(self) -> None:
+        user1 = {"medium": "email", "address": "user1@example.com"}
+        user2 = {"medium": "email", "address": "user2@example.com"}
+        user3 = {"medium": "email", "address": "user3@example.com"}
+        user1_msisdn = {"medium": "msisdn", "address": "447700000000"}
+        config = [user1, user2]
+
+        self.assertTrue(is_threepid_reserved(config, user1))
+        self.assertFalse(is_threepid_reserved(config, user3))
+        self.assertFalse(is_threepid_reserved(config, user1_msisdn))
+
+    def test_default_set_of_listeners(self) -> None:
+        """
+        Test that we get a default set of listeners from the `RootConfig`
+        """
+        conf = yaml.safe_load(
+            # We use `HomeServerConfig` instead of `RootConfig` as it has all of the
+            # `config_classes` defined.
+            HomeServerConfig().generate_config(
+                config_dir_path="CONFDIR",
+                data_dir_path="/data_dir_path",
+                server_name="che.org",
+                open_private_ports=False,
+                listeners=None,
+            )
+        )
+
+        expected_listeners: list[dict] = [
+            {
+                "port": 8008,
+                "tls": False,
+                "type": "http",
+                "x_forwarded": True,
+                "bind_addresses": ["::1", "127.0.0.1"],
+                "resources": [{"names": ["client", "federation"], "compress": False}],
+            }
+        ]
+
+        self.assertEqual(conf["listeners"], expected_listeners)
+
+    def test_default_set_of_listeners_with_enable_metrics(self) -> None:
+        """
+        Test that the default set of listeners from the `RootConfig` gets a metrics
+        listener when `enable_metrics=True`.
+        """
+        conf = yaml.safe_load(
+            # We use `HomeServerConfig` instead of `RootConfig` as it has all of the
+            # `config_classes` defined.
+            HomeServerConfig().generate_config(
+                config_dir_path="CONFDIR",
+                data_dir_path="/data_dir_path",
+                server_name="che.org",
+                open_private_ports=False,
+                enable_metrics=True,
+                listeners=None,
+            )
+        )
+
+        expected_listeners: list[dict] = [
+            {
+                "port": 8008,
+                "tls": False,
+                "type": "http",
+                "x_forwarded": True,
+                "bind_addresses": ["::1", "127.0.0.1"],
+                "resources": [{"names": ["client", "federation"], "compress": False}],
+            },
+            {
+                "port": 19090,
+                "tls": False,
+                "type": "metrics",
+                "bind_addresses": ["::1", "127.0.0.1"],
+            },
+        ]
+
+        self.assertEqual(conf["listeners"], expected_listeners)
+
+    def test_unsecure_listener_no_listeners(self) -> None:
+        conf = yaml.safe_load(
+            ServerConfig(RootConfig()).generate_config_section(
+                config_dir_path="CONFDIR",
+                data_dir_path="/data_dir_path",
+                server_name="che.org",
+                open_private_ports=False,
+                listeners=None,
+            )
+        )
+
+        # We expect `None` because we only operate with what's given to us. The default
+        # set of listeners comes from the logic one layer above in `RootConfig` (see
+        # tests above).
+        expected_listeners: list[dict] = []
+
+        self.assertEqual(conf["listeners"], expected_listeners)
+
+    def test_listeners_set_correctly_open_private_ports_false(self) -> None:
+        listeners = [
+            {
+                "port": 8448,
+                "resources": [{"names": ["federation"]}],
+                "tls": True,
+                "type": "http",
+            },
+            {
+                "port": 443,
+                "resources": [{"names": ["client"]}],
+                "tls": False,
+                "type": "http",
+            },
+        ]
+
+        conf = yaml.safe_load(
+            ServerConfig(RootConfig()).generate_config_section(
+                config_dir_path="CONFDIR",
+                data_dir_path="/data_dir_path",
+                server_name="this.one.listens",
+                open_private_ports=True,
+                listeners=listeners,
+            )
+        )
+
+        self.assertEqual(conf["listeners"], listeners)
+
+    def test_listeners_set_correctly_open_private_ports_true(self) -> None:
+        listeners = [
+            {
+                "port": 8448,
+                "resources": [{"names": ["federation"]}],
+                "tls": True,
+                "type": "http",
+            },
+            {
+                "port": 443,
+                "resources": [{"names": ["client"]}],
+                "tls": False,
+                "type": "http",
+            },
+            {
+                "port": 1243,
+                "resources": [{"names": ["client"]}],
+                "tls": False,
+                "type": "http",
+                "bind_addresses": ["this_one_is_bound"],
+            },
+        ]
+
+        expected_listeners = listeners.copy()
+        expected_listeners[1]["bind_addresses"] = ["::1", "127.0.0.1"]
+
+        conf = yaml.safe_load(
+            ServerConfig(RootConfig()).generate_config_section(
+                config_dir_path="CONFDIR",
+                data_dir_path="/data_dir_path",
+                server_name="this.one.listens",
+                open_private_ports=True,
+                listeners=listeners,
+            )
+        )
+
+        self.assertEqual(conf["listeners"], expected_listeners)
+
+    def test_max_delayed_events_enforces_positive(self) -> None:
+        """
+        Test that the configured maximum allowed delay must be a positive value if set,
+        as per documentation
+        """
+
+        def generate_config(value: int) -> JsonDict:
+            return {"max_event_delay_duration": value}
+
+        _read_config(generate_config(1))
+
+        with self.assertRaises(ConfigError):
+            _read_config(generate_config(0))
+
+        with self.assertRaises(ConfigError):
+            _read_config(generate_config(-1))
+
+    def test_max_delayed_events_per_user_enforces_non_negative_int(self) -> None:
+        """
+        Test that the configured maximum number of delayed events must be a non-negative value if set,
+        as a negative limit can never be satisfied
+        """
+
+        def generate_config(value: Any) -> JsonDict:
+            return {
+                "experimental_features": {"msc4140_max_delayed_events_per_user": value}
+            }
+
+        for allowed_value in (0, 1):
+            _read_config(generate_config(allowed_value))
+
+        for disallowed_value in (-1, 0.5):
+            with self.assertRaises(ConfigError):
+                _read_config(generate_config(disallowed_value))
+
+    def test_limit_profile_requests_requires_auth(self) -> None:
+        """
+        Test that `limit_profile_requests_to_users_who_share_rooms` can only be
+        enabled together with `require_auth_for_profile_requests`, as the shared-room
+        check is only applied to authenticated requests
+        """
+
+        def generate_config(limit: bool, require_auth: bool) -> JsonDict:
+            return {
+                "limit_profile_requests_to_users_who_share_rooms": limit,
+                "require_auth_for_profile_requests": require_auth,
+            }
+
+        _read_config(generate_config(limit=False, require_auth=False))
+        _read_config(generate_config(limit=False, require_auth=True))
+        _read_config(generate_config(limit=True, require_auth=True))
+
+        with self.assertRaises(ConfigError):
+            _read_config(generate_config(limit=True, require_auth=False))
+
+        # `require_auth_for_profile_requests` defaults to false
+        with self.assertRaises(ConfigError):
+            _read_config({"limit_profile_requests_to_users_who_share_rooms": True})
+
+    @parameterized.expand(
+        [
+            [
+                "single",
+                {
+                    "experimental_features": {
+                        "msc4140_max_delayed_events_per_user": 3,
+                    }
+                },
+            ],
+            # This has historically worked and this is being added as a regression test
+            ["none", {"experimental_features": None}],
+        ]
+    )
+    def test_experimental_features_parsing(
+        self, test_description: str, config_values: JsonDict
+    ) -> None:
+        """
+        Test the that `experimental_features` parses with these values
+        """
+
+        _read_config(config_values)
+
+
+def _read_config(config_values: JsonDict) -> None:
+    ServerConfig(RootConfig()).read_config(
+        yaml.safe_load(
+            HomeServerConfig().generate_config(
+                config_dir_path="CONFDIR",
+                data_dir_path="/data_dir_path",
+                server_name="che.org",
+            )
+        )
+        | config_values
+    )
+
+
+class GenerateIpSetTestCase(unittest.TestCase):
+    def test_empty(self) -> None:
+        ip_set = generate_ip_set(())
+        self.assertFalse(ip_set)
+
+        ip_set = generate_ip_set((), ())
+        self.assertFalse(ip_set)
+
+    def test_generate(self) -> None:
+        """Check adding IPv4 and IPv6 addresses."""
+        # IPv4 address
+        ip_set = generate_ip_set(("1.2.3.4",))
+        self.assertEqual(len(ip_set.iter_cidrs()), 4)
+
+        # IPv4 CIDR
+        ip_set = generate_ip_set(("1.2.3.4/24",))
+        self.assertEqual(len(ip_set.iter_cidrs()), 4)
+
+        # IPv6 address
+        ip_set = generate_ip_set(("2001:db8::8a2e:370:7334",))
+        self.assertEqual(len(ip_set.iter_cidrs()), 1)
+
+        # IPv6 CIDR
+        ip_set = generate_ip_set(("2001:db8::/104",))
+        self.assertEqual(len(ip_set.iter_cidrs()), 1)
+
+        # The addresses can overlap OK.
+        ip_set = generate_ip_set(("1.2.3.4", "::1.2.3.4"))
+        self.assertEqual(len(ip_set.iter_cidrs()), 4)
+
+    def test_extra(self) -> None:
+        """Extra IP addresses are treated the same."""
+        ip_set = generate_ip_set((), ("1.2.3.4",))
+        self.assertEqual(len(ip_set.iter_cidrs()), 4)
+
+        ip_set = generate_ip_set(("1.1.1.1",), ("1.2.3.4",))
+        self.assertEqual(len(ip_set.iter_cidrs()), 8)
+
+        # They can duplicate without error.
+        ip_set = generate_ip_set(("1.2.3.4",), ("1.2.3.4",))
+        self.assertEqual(len(ip_set.iter_cidrs()), 4)
+
+    def test_bad_value(self) -> None:
+        """An error should be raised if a bad value is passed in."""
+        with self.assertRaises(ConfigError):
+            generate_ip_set(("not-an-ip",))
+
+        with self.assertRaises(ConfigError):
+            generate_ip_set(("1.2.3.4/128",))
+
+        with self.assertRaises(ConfigError):
+            generate_ip_set((":::",))
+
+        # The following get treated as empty data.
+        self.assertFalse(generate_ip_set(None))
+        self.assertFalse(generate_ip_set({}))

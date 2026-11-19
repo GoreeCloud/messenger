@@ -1,0 +1,1574 @@
+#
+# This file is licensed under the Affero General Public License (AGPL) version 3.
+#
+# Copyright 2019 Matrix.org Federation C.I.C
+# Copyright 2014-2016 OpenMarket Ltd
+# Copyright (C) 2023 New Vector, Ltd
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# See the GNU Affero General Public License for more details:
+# <https://www.gnu.org/licenses/agpl-3.0.html>.
+#
+# Originally licensed under the Apache License, Version 2.0:
+# <http://www.apache.org/licenses/LICENSE-2.0>.
+#
+# [This file includes modifications made by New Vector Limited]
+#
+#
+import copy
+import functools
+import gc
+import hashlib
+import hmac
+import json
+import logging
+import os
+import re
+import secrets
+import sys
+import time
+from collections.abc import Set
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    ClassVar,
+    Generic,
+    Iterable,
+    Mapping,
+    NoReturn,
+    Optional,
+    Protocol,
+    TypeVar,
+)
+from unittest.mock import Mock, patch
+
+import canonicaljson
+import signedjson.key
+import unpaddedbase64
+from prometheus_client.samples import Sample
+from typing_extensions import Concatenate, Never, ParamSpec, override
+
+from twisted.internet import defer
+from twisted.internet.defer import Deferred, ensureDeferred
+from twisted.internet.testing import MemoryReactor, MemoryReactorClock
+from twisted.python.failure import Failure
+from twisted.python.threadpool import ThreadPool
+from twisted.trial import unittest
+from twisted.web.resource import Resource
+from twisted.web.server import Request
+
+from synapse import events
+from synapse.api.constants import EventTypes
+from synapse.api.room_versions import KNOWN_ROOM_VERSIONS, RoomVersion
+from synapse.config._base import Config, RootConfig
+from synapse.config.homeserver import HomeServerConfig
+from synapse.config.server import DEFAULT_ROOM_VERSION
+from synapse.crypto.event_signing import add_hashes_and_signatures
+from synapse.federation.transport.server import TransportLayerServer
+from synapse.http.server import JsonResource, OptionsResource
+from synapse.http.site import SynapseRequest, SynapseSite
+from synapse.logging.context import (
+    SENTINEL_CONTEXT,
+    LoggingContext,
+    current_context,
+    set_current_context,
+)
+from synapse.metrics import SERVER_NAME_LABEL
+from synapse.rest import RegisterServletsFunc
+from synapse.server import HomeServer
+from synapse.storage.keys import FetchKeyResult
+from synapse.types import ISynapseReactor, JsonDict, Requester, UserID, create_requester
+from synapse.util.clock import CLOCK_SCHEDULE_EPSILON, Clock
+from synapse.util.httpresourcetree import create_resource_tree
+
+from tests.server import (
+    CustomHeaderType,
+    FakeChannel,
+    ThreadedMemoryReactorClock,
+    get_clock,
+    make_request,
+    setup_test_homeserver,
+)
+from tests.test_utils import event_injection, setup_awaitable_errors
+from tests.test_utils.logging_setup import setup_logging
+from tests.utils import checked_cast, default_config, setupdb
+
+if TYPE_CHECKING:
+    from prometheus_client.registry import Collector
+
+setupdb()
+setup_logging()
+
+logger = logging.getLogger(__name__)
+
+TV = TypeVar("TV")
+_ExcType = TypeVar("_ExcType", bound=BaseException, covariant=True)
+
+P = ParamSpec("P")
+R = TypeVar("R")
+S = TypeVar("S")
+
+
+def _use_colour() -> bool:
+    """
+    Whether assertion failures should be coloured with ANSI escapes.
+
+    Follow the `NO_COLOR`/`FORCE_COLOR` conventions (https://no-color.org, https://force-color.org/).
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    return sys.stdout.isatty()
+
+
+class _TypedFailure(Generic[_ExcType], Protocol):
+    """Extension to twisted.Failure, where the 'value' has a certain type."""
+
+    @property
+    def value(self) -> _ExcType: ...
+
+
+def around(target: TV) -> Callable[[Callable[Concatenate[S, P], R]], None]:
+    """A CLOS-style 'around' modifier, which wraps the original method of the
+    given instance with another piece of code.
+
+    @around(self)
+    def method_name(orig, *args, **kwargs):
+        return orig(*args, **kwargs)
+    """
+
+    def _around(code: Callable[Concatenate[S, P], R]) -> None:
+        name = code.__name__
+        orig = getattr(target, name)
+
+        def new(*args: P.args, **kwargs: P.kwargs) -> R:
+            return code(orig, *args, **kwargs)
+
+        setattr(target, name, new)
+
+    return _around
+
+
+_TConfig = TypeVar("_TConfig", Config, HomeServerConfig)
+
+
+def deepcopy_config(config: _TConfig) -> _TConfig:
+    new_config: _TConfig
+
+    if isinstance(config, RootConfig):
+        new_config = config.__class__(config.config_files)  # type: ignore[arg-type]
+    else:
+        new_config = config.__class__(config.root)
+
+    for attr_name in config.__dict__:
+        if attr_name.startswith("__") or attr_name == "root":
+            continue
+        attr = getattr(config, attr_name)
+        new_attr: Any
+        if isinstance(attr, Config):
+            new_attr = deepcopy_config(attr)
+        elif isinstance(attr, (list, dict, set)):
+            # Copy mutable containers so that tests which modify config values
+            # in place (e.g. appending to a list) don't leak those changes into
+            # the cached config object, and thus into every other test.
+            new_attr = copy.deepcopy(attr)
+        else:
+            new_attr = attr
+
+        setattr(new_config, attr_name, new_attr)
+
+    return new_config
+
+
+@functools.lru_cache(maxsize=8)
+def _parse_config_dict(config: str) -> HomeServerConfig:
+    config_obj = HomeServerConfig()
+    config_obj.parse_config_dict(json.loads(config), "", "")
+    return config_obj
+
+
+def make_homeserver_config_obj(config: dict[str, Any]) -> HomeServerConfig:
+    """Creates a :class:`HomeServerConfig` instance with the given configuration dict.
+
+    This is equivalent to::
+
+        config_obj = HomeServerConfig()
+        config_obj.parse_config_dict(config, "", "")
+
+    but it keeps a cache of `HomeServerConfig` instances and deepcopies them as needed,
+    to avoid validating the whole configuration every time.
+    """
+    config_obj = _parse_config_dict(json.dumps(config, sort_keys=True))
+    return deepcopy_config(config_obj)
+
+
+class TestCase(unittest.TestCase):
+    """A subclass of twisted.trial's TestCase which looks for 'loglevel'
+    attributes on both itself and its individual test methods, to override the
+    root logger's logging level while that test (case|method) runs."""
+
+    def __init__(self, methodName: str):
+        super().__init__(methodName)
+
+        method = getattr(self, methodName)
+
+        level = getattr(method, "loglevel", getattr(self, "loglevel", None))
+
+        @around(self)
+        def setUp(orig: Callable[[], R]) -> R:
+            # if we're not starting in the sentinel logcontext, then to be honest
+            # all future bets are off.
+            if current_context():
+                self.fail(
+                    "Test starting with non-sentinel logging context %s"
+                    % (current_context(),)
+                )
+
+            # Disable GC for duration of test. See below for why.
+            gc.disable()
+
+            old_level = logging.getLogger().level
+            if level is not None and old_level != level:
+
+                @around(self)
+                def tearDown(orig: Callable[[], R]) -> R:
+                    ret = orig()
+                    logging.getLogger().setLevel(old_level)
+                    return ret
+
+                logging.getLogger().setLevel(level)
+
+            # Trial messes with the warnings configuration, thus this has to be
+            # done in the context of an individual TestCase.
+            self.addCleanup(setup_awaitable_errors())
+
+            return orig()
+
+        # We want to force a GC to workaround problems with deferreds leaking
+        # logcontexts when they are GCed (see the logcontext docs).
+        #
+        # The easiest way to do this would be to do a full GC after each test
+        # run, but that is very expensive. Instead, we disable GC (above) for
+        # the duration of the test and only run a gen-0 GC, which is a lot
+        # quicker. This doesn't clean up everything, since the TestCase
+        # instance still holds references to objects created during the test,
+        # such as HomeServers, so we do a full GC every so often.
+
+        @around(self)
+        def tearDown(orig: Callable[[], R]) -> R:
+            ret = orig()
+            gc.collect(0)
+            # Run a full GC every 50 gen-0 GCs.
+            gen0_stats = gc.get_stats()[0]
+            gen0_collections = gen0_stats["collections"]
+            if gen0_collections % 50 == 0:
+                gc.collect()
+            gc.enable()
+            set_current_context(SENTINEL_CONTEXT)
+
+            return ret
+
+    def assertObjectHasAttributes(self, attrs: dict[str, object], obj: object) -> None:
+        """Asserts that the given object has each of the attributes given, and
+        that the value of each matches according to assertEqual."""
+        for key in attrs.keys():
+            if not hasattr(obj, key):
+                raise AssertionError("Expected obj to have a '.%s'" % key)
+            try:
+                self.assertEqual(attrs[key], getattr(obj, key))
+            except AssertionError as e:
+                raise (type(e))(f"Assert error for '.{key}':") from e
+
+    def assert_dict(self, required: Mapping, actual: Mapping) -> None:
+        """Does a partial assert of a dict.
+
+        Args:
+            required: The keys and value which MUST be in 'actual'.
+            actual: The test result. Extra keys will not be checked.
+        """
+        for key in required:
+            self.assertEqual(
+                required[key], actual[key], msg="%s mismatch. %s" % (key, actual)
+            )
+
+    def _fail_with_set_inequality(
+        self,
+        actual_items: Set[TV],
+        expected_items: Set[TV],
+        message: str | None,
+        exact: bool,
+    ) -> Never:
+        """
+        Fail the current test, printing a rich message showing
+        the set inequality.
+
+        If `exact` is True, we expect no extra items in `actual_items`.
+        If `exact` is False, we clarify that extra items are permissible.
+        """
+        if _use_colour():
+            BOLD = "\033[1m"
+            DIM_GREY = "\033[2;37m"
+            RED = "\033[31m"
+            BRIGHT_YELLOW = "\033[93m"
+            DIM_BLUE = "\033[94m"
+            RESET = "\033[0m"
+        else:
+            BOLD = DIM_GREY = RED = BRIGHT_YELLOW = DIM_BLUE = RESET = ""
+
+        # If it's correct, use dim grey: we don't want to draw your attention to it
+        # Grey out the whole item
+        CORRECT_MARKER = f"{DIM_GREY}      ok"
+
+        # If it's wrong, use red: that's the most important information here
+        MISSING_MARKER = f" {RED}missing{RESET}{BRIGHT_YELLOW}"
+        UNEXPECTED_MARKER = f"{RED}unwanted{RESET}{BRIGHT_YELLOW}"
+
+        # If it's a harmless extra, give it a slight bit more emphasis than something correct
+        # (as it could be a sign of something unexpected), but not enough to make it seem wrong.
+        EXTRA_MARKER = f"{DIM_BLUE}   extra{RESET}"
+
+        used_markers = set()
+        expected_lines: list[str] = []
+
+        # Sort the items in the sets for ease of reading. Motivation:
+        # - keeps `(A, B)` and `(A, C)` next to each other in sets of tuples
+        # - makes it easier to cross-compare the two sets visually if they are in the same order
+        #
+        # sorted() only accepts objects that support at least `<` or `>`.
+        # Virtually every immutable data type in Python supports these, so virtually
+        # everything inside a set supports these.
+        # Ignore the type error arising from not proving that `TV` supports comparison.
+        for expected_item in sorted(expected_items):  # type: ignore[type-var]
+            is_missing = expected_item not in actual_items
+
+            marker = MISSING_MARKER if is_missing else CORRECT_MARKER
+
+            used_markers.add(marker)
+            expected_lines.append(f"{marker}   {expected_item!r}{RESET}")
+
+        actual_lines: list[str] = []
+        # See note above about type ignore.
+        for actual_item in sorted(actual_items):  # type: ignore[type-var]
+            is_expected = actual_item in expected_items
+
+            if is_expected:
+                marker = CORRECT_MARKER
+            elif exact:
+                # We want an exact match, so this 'extra' is actively 'unwanted'
+                marker = UNEXPECTED_MARKER
+            else:
+                # Harmless 'extra'
+                marker = EXTRA_MARKER
+
+            used_markers.add(marker)
+            actual_lines.append(f"{marker}   {actual_item!r}{RESET}")
+
+        newline = "\n"
+        expected_string = f"{BOLD}Expected items:{RESET}\n         {{\n{newline.join(expected_lines)}\n         }}"
+        actual_string = f"{BOLD}Actually received items:{RESET}\n         {{\n{newline.join(actual_lines)}\n         }}"
+        first_message = (
+            "Items must match exactly (sets are not equal)"
+            if exact
+            else "Some expected items are missing."
+        )
+
+        legend = f"{BOLD}Legend:{RESET}\n"
+        if CORRECT_MARKER in used_markers:
+            legend += f"  {CORRECT_MARKER}{RESET}: item is correct as it was both expected and received\n"
+        if MISSING_MARKER in used_markers:
+            legend += (
+                f"  {MISSING_MARKER}{RESET}: item is expected but was not received\n"
+            )
+        if UNEXPECTED_MARKER in used_markers:
+            legend += (
+                f"  {UNEXPECTED_MARKER}{RESET}: item was received but is not expected\n"
+            )
+        if EXTRA_MARKER in used_markers:
+            legend += f"  {EXTRA_MARKER}{RESET}: item was received and allowed, though not explicitly expected\n"
+
+        diff_message = (
+            f"{first_message}\n{legend}\n{expected_string}\n\n{actual_string}"
+        )
+
+        extra_message = ""
+        if message is not None:
+            extra_message = "f\n{message}"
+
+        self.fail(f"{diff_message}{extra_message}")
+
+    @override
+    def assertEqual(self, first: TV, second: TV, msg: object | None = None) -> None:
+        """
+        Override of `assertEqual` to make it print better errors.
+
+        Note that `first` is treated as 'actual' and `second` as 'expected`.
+        (We can't rename them in our override because that is not a compatible change,
+        Mypy forbids it.)
+
+        Specifically:
+            - better errors for set inequality
+        """
+        if first == second:
+            return
+
+        if isinstance(first, Set) and isinstance(second, Set):
+            self._fail_with_set_inequality(
+                first,
+                second,
+                # Any `str()`-able object is valid as a message. We frequently pass in raw JSON responses, for instance.
+                str(msg) if msg is not None else msg,
+                exact=True,
+            )
+
+        # Fall back to the base implementation for other types
+        # Since we know `first == second` does not hold,
+        # we expect this must diverge by raising an exception.
+        super().assertEqual(first=first, second=second, msg=msg)
+        raise AssertionError("unreachable")
+
+    def assertIncludes(
+        self,
+        actual_items: Set[TV],
+        expected_items: Set[TV],
+        exact: bool = False,
+        message: str | None = None,
+    ) -> None:
+        """
+        Assert that all of the `expected_items` are included in the `actual_items`.
+
+        This assert could also be called `assertContains`, `assertItemsInSet`
+
+        Args:
+            actual_items: The container
+            expected_items: The items to check for in the container
+            exact: Whether the actual state should be exactly equal to the expected
+                state (no extras).
+            message: Optional message to include in the failure message.
+        """
+        # Check that each set has the same items
+        if exact and actual_items == expected_items:
+            return
+        # Check for a superset
+        elif not exact and actual_items >= expected_items:
+            return
+
+        self._fail_with_set_inequality(actual_items, expected_items, message, exact)
+
+    def assertEqualNormalisingWhitespace(
+        self, received: str, expected: str, msg: str | None = None
+    ) -> None:
+        """
+        Fail the test if `received` and `expected` are not equal,
+        after having normalised all whitespace.
+
+        By normalising whitespace, we mean that any run of whitespace
+        is replaced by a single ` `, on both sides.
+        The front and back of the strings are also trimmed.
+
+        Whitespace characters considered are: `\n`, `\t`, ` `.
+        """
+        PATTERN = r"[ \n\t]+"
+        REPLACEMENT = " "
+        normalised_received = re.sub(PATTERN, REPLACEMENT, received).strip()
+        normalised_expected = re.sub(PATTERN, REPLACEMENT, expected).strip()
+
+        if normalised_received == normalised_expected:
+            return
+
+        msg = "" if msg is None else msg
+        self.fail(
+            f"Expected strings to match, after normalising whitespace: {msg}\nReceived: {received}\nExpected: {expected}\nReceived (normalised): {normalised_received}\nExpected (normalised): {normalised_expected}"
+        )
+
+
+def DEBUG(target: TV) -> TV:
+    """A decorator to set the .loglevel attribute to logging.DEBUG.
+    Can apply to either a TestCase or an individual test method."""
+    target.loglevel = logging.DEBUG  # type: ignore[attr-defined]
+    return target
+
+
+def INFO(target: TV) -> TV:
+    """A decorator to set the .loglevel attribute to logging.INFO.
+    Can apply to either a TestCase or an individual test method."""
+    target.loglevel = logging.INFO  # type: ignore[attr-defined]
+    return target
+
+
+def logcontext_clean(target: TV) -> TV:
+    """A decorator which marks the TestCase or method as 'logcontext_clean'
+
+    ... ie, any logcontext errors should cause a test failure
+    """
+
+    def logcontext_error(msg: str) -> NoReturn:
+        # Log so we can still see it in the logs like normal
+        logger.warning(msg)
+        # But also fail the test
+        raise AssertionError("logcontext error: %s" % (msg))
+
+    patcher = patch("synapse.logging.context.logcontext_error", new=logcontext_error)
+    return patcher(target)  # type: ignore[call-overload]
+
+
+class HomeserverTestCase(TestCase):
+    """
+    A base TestCase that reduces boilerplate for HomeServer-using test cases.
+
+    Defines a setUp method which creates a mock reactor, and instantiates a homeserver
+    running on that reactor.
+
+    There are various hooks for modifying the way that the homeserver is instantiated:
+
+    * override make_homeserver, for example by making it pass different parameters into
+      setup_test_homeserver.
+
+    * override default_config, to return a modified configuration dictionary for use
+      by setup_test_homeserver.
+
+    * On a per-test basis, you can use the @override_config decorator to give a
+      dictionary containing additional configuration settings to be added to the basic
+      config dict.
+
+    Attributes:
+        servlets: List of servlet registration function.
+        user_id (str): The user ID to assume if auth is hijacked.
+        hijack_auth: Whether to hijack auth to return the user specified
+           in user_id.
+    """
+
+    hijack_auth: ClassVar[bool] = True
+    needs_threadpool: ClassVar[bool] = False
+    servlets: ClassVar[list[RegisterServletsFunc]] = []
+
+    def __init__(self, methodName: str):
+        super().__init__(methodName)
+
+        # see if we have any additional config for this test
+        method = getattr(self, methodName)
+        self._extra_config = getattr(method, "_extra_config", None)
+
+    def setUp(self) -> None:
+        """
+        Set up the TestCase by calling the homeserver constructor, optionally
+        hijacking the authentication system to return a fixed user, and then
+        calling the prepare function.
+        """
+        # We need to share the reactor between the homeserver and all of our test utils.
+        self.reactor, self.clock = get_clock()
+        self.hs = self.make_homeserver(self.reactor, self.clock)
+
+        self.hs.get_datastores().main.tests_allow_no_chain_cover_index = False
+
+        # Honour the `use_frozen_dicts` config option. We have to do this
+        # manually because this is taken care of in the app `start` code, which
+        # we don't run. Plus we want to reset it on tearDown.
+        events.USE_FROZEN_DICTS = self.hs.config.server.use_frozen_dicts
+
+        if self.hs is None:
+            raise Exception("No homeserver returned from make_homeserver.")
+
+        if not isinstance(self.hs, HomeServer):
+            raise Exception("A homeserver wasn't returned, but %r" % (self.hs,))
+
+        # create the root resource, and a site to wrap it.
+        self.resource = self.create_test_resource()
+        self.site = SynapseSite(
+            logger_name="synapse.access.http.fake",
+            site_tag=self.hs.config.server.server_name,
+            config=self.hs.config.server.listeners[0],
+            resource=self.resource,
+            server_version_string="1",
+            max_request_body_size=4096,
+            reactor=self.reactor,
+            hs=self.hs,
+        )
+
+        from tests.rest.client.utils import RestHelper
+
+        self.helper = RestHelper(
+            self.hs,
+            checked_cast(MemoryReactorClock, self.hs.get_reactor()),
+            self.site,
+            getattr(self, "user_id", None),
+        )
+
+        if hasattr(self, "user_id"):
+            if self.hijack_auth:
+                assert self.helper.auth_user_id is not None
+                token = "some_fake_token"
+
+                # We need a valid token ID to satisfy foreign key constraints.
+                token_id = self.get_success(
+                    self.hs.get_datastores().main.add_access_token_to_user(
+                        self.helper.auth_user_id,
+                        token,
+                        None,
+                        None,
+                    )
+                )
+
+                # This has to be a function and not just a Mock, because
+                # `self.helper.auth_user_id` is temporarily reassigned in some tests
+                async def get_requester(*args: Any, **kwargs: Any) -> Requester:
+                    assert self.helper.auth_user_id is not None
+                    return create_requester(
+                        user_id=UserID.from_string(self.helper.auth_user_id),
+                        access_token_id=token_id,
+                    )
+
+                # Type ignore: mypy doesn't like us assigning to methods.
+                self.hs.get_auth().get_user_by_req = get_requester  # type: ignore[method-assign]
+                self.hs.get_auth().get_user_by_access_token = get_requester  # type: ignore[method-assign]
+                self.hs.get_auth().get_access_token_from_request = Mock(  # type: ignore[method-assign]
+                    return_value=token
+                )
+
+        if self.needs_threadpool:
+            self.reactor.threadpool = ThreadPool()  # type: ignore[assignment]
+            self.addCleanup(self.reactor.threadpool.stop)
+            self.reactor.threadpool.start()
+
+        if hasattr(self, "prepare"):
+            self.prepare(self.reactor, self.clock, self.hs)
+
+    def tearDown(self) -> None:
+        # Reset to not use frozen dicts.
+        events.USE_FROZEN_DICTS = False
+
+    def wait_for_background_updates(self) -> None:
+        """Block until all background database updates have completed."""
+        store = self.hs.get_datastores().main
+        while not self.get_success(
+            store.db_pool.updates.has_completed_background_updates()
+        ):
+            self.get_success(store.db_pool.updates.do_next_background_update(False))
+
+    def make_homeserver(
+        self, reactor: ThreadedMemoryReactorClock, clock: Clock
+    ) -> HomeServer:
+        """
+        Make and return a homeserver.
+
+        Args:
+            reactor: A Twisted Reactor, or something that pretends to be one.
+            clock: The Clock, associated with the reactor.
+
+        Returns:
+            A homeserver suitable for testing.
+
+        Function to be overridden in subclasses.
+        """
+        hs = self.setup_test_homeserver(reactor=reactor, clock=clock)
+        return hs
+
+    def create_test_resource(self) -> Resource:
+        """
+        Create a the root resource for the test server.
+
+        The default calls `self.create_resource_dict` and builds the resultant dict
+        into a tree.
+        """
+        root_resource = OptionsResource()
+        create_resource_tree(self.create_resource_dict(), root_resource)
+        return root_resource
+
+    def create_resource_dict(self) -> dict[str, Resource]:
+        """Create a resource tree for the test server
+
+        A resource tree is a mapping from path to twisted.web.resource.
+
+        The default implementation creates a JsonResource and calls each function in
+        `servlets` to register servlets against it.
+        """
+        servlet_resource = JsonResource(self.hs)
+        for servlet in self.servlets:
+            servlet(self.hs, servlet_resource)
+        return {
+            "/_matrix/client": servlet_resource,
+            "/_synapse/admin": servlet_resource,
+        }
+
+    def default_config(self) -> JsonDict:
+        """
+        Get a default HomeServer config dict.
+        """
+        config = default_config(server_name="test")
+
+        # apply any additional config which was specified via the override_config
+        # decorator.
+        if self._extra_config is not None:
+            config.update(self._extra_config)
+
+        return config
+
+    def prepare(
+        self, reactor: MemoryReactor, clock: Clock, homeserver: HomeServer
+    ) -> None:
+        """
+        Prepare for the test.  This involves things like mocking out parts of
+        the homeserver, or building test data common across the whole test
+        suite.
+
+        Args:
+            reactor: A Twisted Reactor, or something that pretends to be one.
+            clock: The Clock, associated with the reactor.
+            homeserver: The HomeServer to test against.
+
+        Function to optionally be overridden in subclasses.
+        """
+
+    def make_request(
+        self,
+        method: bytes | str,
+        path: bytes | str,
+        content: bytes | str | JsonDict = b"",
+        access_token: str | None = None,
+        request: type[Request] = SynapseRequest,
+        shorthand: bool = True,
+        federation_auth_origin: bytes | None = None,
+        content_type: bytes | None = None,
+        content_is_form: bool = False,
+        await_result: bool = True,
+        custom_headers: Iterable[CustomHeaderType] | None = None,
+        client_ip: str = "127.0.0.1",
+    ) -> FakeChannel:
+        """
+        Create a SynapseRequest at the path using the method and containing the
+        given content.
+
+        Args:
+            method: The HTTP request method ("verb").
+            path: The HTTP path, suitably URL encoded (e.g. escaped UTF-8 & spaces
+                and such). content (bytes or dict): The body of the request.
+                JSON-encoded, if a dict.
+            shorthand: Whether to try and be helpful and prefix the given URL
+            with the usual REST API path, if it doesn't contain it.
+            federation_auth_origin: if set to not-None, we will add a fake
+                Authorization header pretenting to be the given server name.
+
+            content_type: The content-type to use for the request. If not set then will default to
+                application/json unless content_is_form is true.
+            content_is_form: Whether the content is URL encoded form data. Adds the
+                'Content-Type': 'application/x-www-form-urlencoded' header.
+
+            await_result: whether to wait for the request to complete rendering. If
+                 true (the default), will pump the test reactor until the the renderer
+                 tells the channel the request is finished.
+
+            custom_headers: (name, value) pairs to add as request headers
+
+            client_ip: The IP to use as the requesting IP. Useful for testing
+                ratelimiting.
+
+        Returns:
+            The FakeChannel object which stores the result of the request.
+        """
+        return make_request(
+            self.reactor,
+            self.site,
+            method,
+            path,
+            content,
+            access_token,
+            request,
+            shorthand,
+            federation_auth_origin,
+            content_type,
+            content_is_form,
+            await_result,
+            custom_headers,
+            client_ip,
+        )
+
+    def setup_test_homeserver(
+        self,
+        server_name: str | None = None,
+        config: JsonDict | None = None,
+        reactor: Optional[ISynapseReactor] = None,
+        clock: Clock | None = None,
+        **extra_homeserver_attributes: Any,
+    ) -> HomeServer:
+        """
+        Set up the test homeserver, meant to be called by the overridable
+        make_homeserver. It automatically passes through the test class's
+        clock & reactor.
+
+        Args:
+            See tests.utils.setup_test_homeserver.
+
+        Returns:
+            synapse.server.HomeServer
+        """
+        if config is None:
+            config = self.default_config()
+
+        # The sane default is to use the same reactor and clock as our other test utils
+        if reactor is None:
+            reactor = self.reactor
+
+        if clock is None:
+            clock = self.clock
+
+        # The server name can be specified using either the `name` argument or a config
+        # override. The `name` argument takes precedence over any config overrides.
+        if server_name is not None:
+            config["server_name"] = server_name
+
+        # Parse the config from a config dict into a HomeServerConfig
+        config_obj = make_homeserver_config_obj(config)
+
+        # The server name in the config is now `name`, if provided, or the `server_name`
+        # from a config override, or the default of "test". Whichever it is, we
+        # construct a homeserver with a matching name.
+        server_name = config_obj.server.server_name
+
+        async def run_bg_updates() -> None:
+            with LoggingContext(name="run_bg_updates", server_name=server_name):
+                self.get_success(stor.db_pool.updates.run_background_updates(False))
+
+        hs = setup_test_homeserver(
+            cleanup_func=self.addCleanup,
+            server_name=server_name,
+            config=config_obj,
+            reactor=reactor,
+            clock=clock,
+            **extra_homeserver_attributes,
+        )
+        stor = hs.get_datastores().main
+
+        # Run the database background updates, when running against "master".
+        if hs.__class__.__name__ == "TestHomeServer":
+            self.get_success(run_bg_updates())
+
+        return hs
+
+    def pump(self, by: float = 0.0) -> None:
+        """
+        XXX: Deprecated: This method is deprecated. Use `self.reactor.advance(...)`
+        directly instead.
+
+        Pump the reactor enough that `clock.call_later` scheduled callbacks will fire.
+
+        To demystify this function, it simply advances time by the number of seconds
+        specified (defaults to `0`, we also multiply by 100, so `pump(1)` is 100 seconds
+        in 1 second steps/increments) whilst calling any pending callbacks, allowing any
+        queued/pending tasks to run because enough time has passed.
+
+        So for example, if you have some Synapse code that does
+        `clock.call_later(Duration(seconds=2), callback)`, then calling
+        `self.pump(by=0.02)` will advance time by 2 seconds, which is enough for that
+        callback to be ready to run now. Same for `clock.sleep(...)` ,
+        `clock.looping_call(...)`, and whatever other clock utilities that use
+        `clock.call_later` under the hood for scheduling tasks. Trying to use
+        `pump(by=...)` with exact math to meet a specific deadline feels pretty dirty
+        though which is why we recommend using `self.reactor.advance(...)` directly
+        nowadays.
+
+        We don't have any exact historical context for why `pump()` was introduced into
+        the codebase beyond the code itself. We assume that we multiply by 100 so that
+        when you use the clock to schedule something that schedules more things, it
+        tries to run the whole chain to completion.
+
+        XXX: If you're having to call this function, please call out in comments, which
+        scheduled thing you're aiming to trigger. Please also check whether the
+        `pump(...)` is even necessary as it was often misused.
+
+        Args:
+            by: The time increment in seconds to advance time by. We will advance time
+                in 100 steps, each step by this value.
+        """
+        # We multiply by 100, so `pump(1)` actually advances time by 100 seconds in 1
+        # second steps/increments. We assume this was done so that when you use the
+        # clock to schedule something that schedules more things, it tries to run the
+        # whole chain to completion.
+        self.reactor.pump([by] * 100)
+
+    def _wait_for_deferred(
+        self,
+        d: "Deferred[Any]",
+    ) -> None:
+        """
+        Wait for the deferred to finish or raise.
+
+        Does not advance time in the Twisted reactor clock but will loop 100 times
+        waiting for a result. The loop 1) allows `clock.call_later` scheduled callbacks
+        to run if they are scheduled to run now and 2) will also allow other threads to
+        make progress. This could be things spawned on the Twisted reactor threadpool or
+        Tokio runtime (async Rust code).
+
+        Args:
+            d: Twisted Deferred
+
+        Raises:
+            defer.TimeoutError: If the timeout expires before the deferred completes.
+        """
+        # Wait until the deferred has a result
+        #
+        # Checking `d.called` by itself is not sufficient by itself as this is possible:
+        #
+        # If you have a first `Deferred` `D1`, you can add a callback which returns
+        # another `Deferred` `D2`, and `D2` must then complete before any further
+        # callbacks on `D1` will execute (and later callbacks on `D1` get the *result*
+        # of `D2` rather than `D2` itself).
+        #
+        # So, `D1` might have `called=True` (as in, it has started running its
+        # callbacks), but any new callbacks added to `D1` won't get run until `D2`
+        # completes. Fortunately, we can detect this by checking `d.paused`.
+        loop_count = 0
+        while not d.called or d.paused:
+            # 100 loops is arbitrary but based on previous code which used to "pump" and
+            # advance the reactor 100 times. This also makes the assumption that any
+            # work on other threads will finish before we give up after sleeping ~0.1s
+            # of real-time (100 * 0.001).
+            if loop_count > 100:
+                raise defer.TimeoutError("Timed out waiting for deferred to finish")
+
+            # Suspend execution of this thread to allow other threads to do work. This
+            # could be things spawned on the Twisted reactor threadpool or Tokio thread
+            # pool (async Rust code).
+            #
+            # Note: Python has a default thread switch interval (5ms for cpython) (see
+            # `sys.setswitchinterval(interval)`) but we still want this here as we're
+            # able to preempt and cause the thread context switch to happen faster.
+            # Also, without any real-time sleeping, this function would complete before
+            # the 5ms switch ever happened.
+            #
+            # After a few cycles, we use `time.sleep(0.001)` instead of `time.sleep(0)`
+            # to avoid tightlooping on the main thread (CPU 100%) because it's wasteful
+            # and may starve out other threads. 10 is arbitrary but many cases will have
+            # none or only a few round-trips so we can just try to go as fast as
+            # possible.
+            if loop_count < 10:
+                time.sleep(0)
+            else:
+                time.sleep(0.001)
+
+            # Advance the Twisted reactor and run any scheduled callbacks
+            #
+            # In terms of other threads, they may have scheduled something on the
+            # reactor to run (like `reactor.callFromThread(...)`)
+            #
+            # Ideally, we'd advance by `0` but the `Cooperator` used in our HTTP clients
+            # use `CLOCK_SCHEDULE_EPSILON` and we want to make usage in downstream tests
+            # as simple as possible. A common use case this helps with is anything that
+            # needs to make a HTTP request (like a replication requests)
+            self.reactor.advance(CLOCK_SCHEDULE_EPSILON.as_secs())
+
+            loop_count += 1
+
+    def get_success(
+        self,
+        d: Awaitable[TV],
+    ) -> TV:
+        """
+        Get the success result of an awaitable.
+
+        Does not advance time in the Twisted reactor clock but will loop 100 times
+        waiting for a result. The loop 1) allows `clock.call_later` scheduled callbacks
+        to run if they are scheduled to run now and 2) will also allow other threads to
+        make progress. This could be things spawned on the Twisted reactor threadpool or
+        Tokio runtime (async Rust code).
+
+        If you need to advance the Twisted reactor by an actual time increment, you can
+        use the following pattern:
+        ```python
+        # We use `ensureDeferred(...)` as a `Deferred` can run in the background on its own (unlike a Python coroutine)
+        task_d = ensureDeferred(my_async_task())
+        # Please explain why/what scheduled call you're trying to trigger
+        self.reactor.advance(Duration(seconds=1).as_secs())
+        result = self.get_success(sync_d)
+        ```
+
+        Args:
+            d: awaitable
+
+        Raises:
+            defer.TimeoutError: If the timeout expires before the awaitable completes.
+            SynchronousTestCase.failureException: If the awaitable has a failure result or has no result
+                (although you would probably run into `defer.TimeoutError` in that case).
+        """
+        deferred: Deferred[TV] = ensureDeferred(d)  # type: ignore[arg-type]
+        self._wait_for_deferred(deferred)
+
+        return self.successResultOf(deferred)
+
+    def get_failure(
+        self,
+        d: Awaitable[Any],
+        exc: type[_ExcType],
+    ) -> _TypedFailure[_ExcType]:
+        """
+        Get the failure result of an awaitable. The failure must be of the type `exc`.
+
+        Does not advance time in the Twisted reactor clock but will loop 100 times
+        waiting for a result. The loop 1) allows `clock.call_later` scheduled callbacks
+        to run if they are scheduled to run now and 2) will also allow other threads to
+        make progress. This could be things spawned on the Twisted reactor threadpool or
+        Tokio runtime (async Rust code).
+
+        If you need to advance the Twisted reactor by an actual time increment, you can
+        use the following pattern:
+        ```python
+        # We use `ensureDeferred(...)` as a `Deferred` can run in the background on its own (unlike a Python coroutine)
+        task_d = ensureDeferred(my_async_task())
+        # Please explain why/what scheduled call you're trying to trigger
+        self.reactor.advance(Duration(seconds=1).as_secs())
+        result = self.get_success(sync_d)
+        ```
+
+        Args:
+            d: awaitable
+            exc: Exception type to expect
+
+        Raises:
+            defer.TimeoutError: If the timeout expires before the awaitable completes.
+            SynchronousTestCase.failureException: If the awaitable has a success result,
+                or has an unexpected failure result, or has no result (although you would
+                probably run into `defer.TimeoutError` in that case).
+        """
+        deferred: Deferred[Any] = ensureDeferred(d)  # type: ignore[arg-type]
+        self._wait_for_deferred(deferred)
+
+        return self.failureResultOf(deferred, exc)
+
+    # FIXME: Remove as this has the exact same semantics as `get_success()`. In
+    # https://github.com/matrix-org/synapse/pull/8402#discussion_r495992506 where it was
+    # introduced, it was claimed that "get_success fails the test if the deferred fails
+    # rather than raising, which I find a bit unintuitive." but `get_success()` actually
+    # does raise "@raise SynchronousTestCase.failureException : If the
+    # L{Deferred<twisted.internet.defer.Deferred>} has no result or has a failure
+    # result." at-least in today's world.
+    #
+    # As another alternative, we could also just update `get_success(...)` to have this
+    # behavior as the default, see
+    # https://github.com/element-hq/synapse/pull/19871#discussion_r3483616710
+    def get_success_or_raise(self, d: Awaitable[TV], by: float = 0.0) -> TV:
+        """Drive deferred to completion and return result or raise exception
+        on failure.
+        """
+        deferred: Deferred[TV] = ensureDeferred(d)  # type: ignore[arg-type]
+
+        results: list = []
+        deferred.addBoth(results.append)
+
+        self.pump(by=by)
+
+        if not results:
+            self.fail(
+                "Success result expected on {!r}, found no result instead".format(
+                    deferred
+                )
+            )
+
+        result = results[0]
+
+        if isinstance(result, Failure):
+            result.raiseException()
+
+        return result
+
+    def register_user(
+        self,
+        username: str,
+        password: str,
+        admin: bool | None = False,
+        displayname: str | None = None,
+    ) -> str:
+        """
+        Register a user. Requires the Admin API be registered.
+
+        Args:
+            username: The user part of the new user.
+            password: The password of the new user.
+            admin: Whether the user should be created as an admin or not.
+            displayname: The displayname of the new user.
+
+        Returns:
+            The MXID of the new user.
+        """
+        self.hs.config.registration.registration_shared_secret = "shared"
+
+        # Create the user
+        channel = self.make_request("GET", "/_synapse/admin/v1/register")
+        self.assertEqual(channel.code, 200, msg=channel.result)
+        nonce = channel.json_body["nonce"]
+
+        want_mac = hmac.new(key=b"shared", digestmod=hashlib.sha1)
+        nonce_str = b"\x00".join([username.encode("utf8"), password.encode("utf8")])
+        if admin:
+            nonce_str += b"\x00admin"
+        else:
+            nonce_str += b"\x00notadmin"
+
+        want_mac.update(nonce.encode("ascii") + b"\x00" + nonce_str)
+        want_mac_digest = want_mac.hexdigest()
+
+        body = {
+            "nonce": nonce,
+            "username": username,
+            "displayname": displayname,
+            "password": password,
+            "admin": admin,
+            "mac": want_mac_digest,
+            "inhibit_login": True,
+        }
+        channel = self.make_request("POST", "/_synapse/admin/v1/register", body)
+        self.assertEqual(channel.code, 200, channel.json_body)
+
+        user_id = channel.json_body["user_id"]
+        return user_id
+
+    def register_appservice_user(
+        self,
+        username: str,
+        appservice_token: str,
+        inhibit_login: bool = False,
+    ) -> tuple[str, str | None]:
+        """Register an appservice user as an application service.
+        Requires the client-facing registration API be registered.
+
+        Args:
+            username: the user to be registered by an application service.
+                Should NOT be a full username, i.e. just "localpart" as opposed to "@localpart:hostname"
+            appservice_token: the acccess token for that application service.
+
+        Raises: if the request to '/register' does not return 200 OK.
+
+        Returns:
+            The MXID of the new user, the device ID of the new user's first device.
+        """
+        channel = self.make_request(
+            "POST",
+            "/_matrix/client/r0/register",
+            {
+                "username": username,
+                "type": "m.login.application_service",
+                "inhibit_login": inhibit_login,
+            },
+            access_token=appservice_token,
+        )
+        self.assertEqual(channel.code, 200, channel.json_body)
+        return channel.json_body["user_id"], channel.json_body.get("device_id")
+
+    def login(
+        self,
+        username: str,
+        password: str,
+        device_id: str | None = None,
+        additional_request_fields: dict[str, str] | None = None,
+        custom_headers: Iterable[CustomHeaderType] | None = None,
+    ) -> str:
+        """
+        Log in a user, and get an access token. Requires the Login API be registered.
+
+        Args:
+            username: The localpart to assign to the new user.
+            password: The password to assign to the new user.
+            device_id: An optional device ID to assign to the new device created during
+                login.
+            additional_request_fields: A dictionary containing any additional /login
+                request fields and their values.
+            custom_headers: Custom HTTP headers and values to add to the /login request.
+
+        Returns:
+            The newly registered user's Matrix ID.
+        """
+        body = {"type": "m.login.password", "user": username, "password": password}
+        if device_id:
+            body["device_id"] = device_id
+        if additional_request_fields:
+            body.update(additional_request_fields)
+
+        channel = self.make_request(
+            "POST",
+            "/_matrix/client/r0/login",
+            body,
+            custom_headers=custom_headers,
+        )
+        self.assertEqual(channel.code, 200, channel.result)
+
+        access_token = channel.json_body["access_token"]
+        return access_token
+
+    def create_and_send_event(
+        self,
+        room_id: str,
+        user: UserID,
+        soft_failed: bool = False,
+        prev_event_ids: list[str] | None = None,
+    ) -> str:
+        """
+        Create and send an event.
+
+        Args:
+            soft_failed: Whether to create a soft failed event or not
+            prev_event_ids: Explicitly set the prev events,
+                or if None just use the default
+
+        Returns:
+            The new event's ID.
+        """
+        event_creator = self.hs.get_event_creation_handler()
+        requester = create_requester(user)
+
+        event, unpersisted_context = self.get_success(
+            event_creator.create_event(
+                requester,
+                {
+                    "type": EventTypes.Message,
+                    "room_id": room_id,
+                    "sender": user.to_string(),
+                    "content": {"body": secrets.token_hex(), "msgtype": "m.text"},
+                },
+                prev_event_ids=prev_event_ids,
+            )
+        )
+        context = self.get_success(unpersisted_context.persist(event))
+        if soft_failed:
+            event.internal_metadata.soft_failed = True
+
+        self.get_success(
+            event_creator.handle_new_client_event(
+                requester, events_and_context=[(event, context)]
+            )
+        )
+
+        return event.event_id
+
+    def inject_room_member(self, room: str, user: str, membership: str) -> None:
+        """
+        Inject a membership event into a room.
+
+        Deprecated: use event_injection.inject_room_member directly
+
+        Args:
+            room: Room ID to inject the event into.
+            user: MXID of the user to inject the membership for.
+            membership: The membership type.
+        """
+        self.get_success(
+            event_injection.inject_member_event(self.hs, room, user, membership)
+        )
+
+    def get_prometheus_metric_current_values(
+        self, metric: "Collector", **labels: str
+    ) -> list[Sample]:
+        """Get all samples of a prometheus metric with the given labels.
+
+        Note that the metrics outlives each individual test, so it may hold
+        values from previous tests.
+
+        The `metric` must return exactly one unique series name among its
+        samples, i.e. it should be a Counter or a Gauge, rather than a
+        Histogram.
+
+        Automatically includes SERVER_NAME_LABEL.
+        """
+
+        labels = dict(labels)
+        labels[SERVER_NAME_LABEL] = self.hs.hostname
+
+        # Matching samples for the given labels.
+        found_samples = []
+
+        for collected in metric.collect():
+            for sample in collected.samples:
+                # Old versions of `prometheus_client` also emit a `_created`
+                # timestamp sample alongside each sample, which is never what we
+                # want.
+                if sample.name.endswith("_created"):
+                    continue
+
+                # Check that all the labels match. If any label doesn't match,
+                # we skip this sample.
+                for label, value in labels.items():
+                    if sample.labels.get(label) != value:
+                        break
+                else:
+                    # We didn't break, so all the labels matched. Return this
+                    # sample's value.
+                    found_samples.append(sample)
+
+        # Ensure that there is exactly one unique series name among the found
+        # samples. This is to guard against someone passing in eg a Histogram
+        # metric, which will return multiple series (eg `_total`, `_count`,
+        # `_buckets`, etc), which is likely not what the caller intended.
+        series_names = {sample.name for sample in found_samples}
+        if len(series_names) > 1:
+            raise AssertionError(
+                f"Expected exactly one unique sample name for metric {metric}, but found:\n\n"
+                + "\n".join(series_names)
+                + "\n\n"
+                + "This is a quirk of this test utility (`get_prometheus_metric_current_values(...)`), "
+                + "not your metric and means things like histogram metrics which have `_total`, `_count`, "
+                + "`buckets` sample names aren't compatible with this util at the moment."
+            )
+
+        return found_samples
+
+    def get_prometheus_metric_current_value(
+        self, metric: "Collector", **labels: str
+    ) -> int:
+        """Get the value of a prometheus metric with the given labels.
+
+        This function will raise an AssertionError if there is not exactly one
+        sample with the given labels.
+
+        Note that the metrics outlives each individual test, so it may hold
+        values from previous tests.
+
+        The `metric` must return exactly one unique series name among its
+        samples, i.e. it should be a Counter or a Gauge, rather than a
+        Histogram.
+
+        Automatically includes SERVER_NAME_LABEL.
+        """
+
+        found_samples = self.get_prometheus_metric_current_values(metric, **labels)
+
+        # The caller expects there to be exactly one sample with the given
+        # labels. If there are multiple (or zero) samples, we error.
+        if len(found_samples) == 1:
+            # We found exactly one sample with the given labels, so return its
+            # value.
+            return int(found_samples[0].value)
+        elif len(found_samples) > 1:
+            # We found multiple samples with the given labels, so we error. We
+            # helpfully include the differences in labels between the samples to
+            # help the caller figure out why they got multiple samples.
+            labels_differences_dicts = _get_dict_differences(
+                [sample.labels for sample in found_samples]
+            )
+            differences_str = "\n".join(f" {diff}" for diff in labels_differences_dicts)
+
+            raise AssertionError(
+                f"Multiple metrics found for '{metric}' with labels {labels}\n\n"
+                "`get_prometheus_metric_current_value(...)` expects you to be specific enough"
+                "with labels that only one metric matches. Either, the metrics changed and"
+                "that's wrong in and of itself or you need to update the test to be more"
+                "specific with the labels. The extra labels you can match with are:\n"
+                f"{differences_str}"
+            )
+        else:
+            all_metrics = "\n".join(
+                f" {sample.labels}"
+                for collected in metric.collect()
+                for sample in collected.samples
+            )
+            raise AssertionError(
+                f"No metric found for {metric} with labels {labels}\n"
+                f"All metrics:\n{all_metrics}"
+            )
+
+
+class FederatingHomeserverTestCase(HomeserverTestCase):
+    """
+    A federating homeserver, set up to validate incoming federation requests
+    """
+
+    OTHER_SERVER_NAME = "other.example.com"
+    OTHER_SERVER_SIGNATURE_KEY = signedjson.key.generate_signing_key("test")
+
+    def prepare(self, reactor: MemoryReactor, clock: Clock, hs: HomeServer) -> None:
+        super().prepare(reactor, clock, hs)
+
+        # poke the other server's signing key into the key store, so that we don't
+        # make requests for it
+        verify_key = signedjson.key.get_verify_key(self.OTHER_SERVER_SIGNATURE_KEY)
+        verify_key_id = "%s:%s" % (verify_key.alg, verify_key.version)
+
+        self.get_success(
+            hs.get_datastores().main.store_server_keys_response(
+                self.OTHER_SERVER_NAME,
+                from_server=self.OTHER_SERVER_NAME,
+                ts_added_ms=clock.time_msec(),
+                verify_keys={
+                    verify_key_id: FetchKeyResult(
+                        verify_key=verify_key, valid_until_ts=clock.time_msec() + 10000
+                    ),
+                },
+                response_json={
+                    "verify_keys": {
+                        verify_key_id: {
+                            "key": signedjson.key.encode_verify_key_base64(verify_key)
+                        }
+                    }
+                },
+            )
+        )
+
+    def create_resource_dict(self) -> dict[str, Resource]:
+        d = super().create_resource_dict()
+        d["/_matrix/federation"] = TransportLayerServer(self.hs)
+        return d
+
+    def make_signed_federation_request(
+        self,
+        method: str,
+        path: str,
+        content: JsonDict | None = None,
+        await_result: bool = True,
+        custom_headers: Iterable[CustomHeaderType] | None = None,
+        client_ip: str = "127.0.0.1",
+    ) -> FakeChannel:
+        """Make an inbound signed federation request to this server
+
+        The request is signed as if it came from "other.example.com", which our HS
+        already has the keys for.
+        """
+
+        if custom_headers is None:
+            custom_headers = []
+        else:
+            custom_headers = list(custom_headers)
+
+        custom_headers.append(
+            (
+                "Authorization",
+                _auth_header_for_request(
+                    origin=self.OTHER_SERVER_NAME,
+                    destination=self.hs.hostname,
+                    signing_key=self.OTHER_SERVER_SIGNATURE_KEY,
+                    method=method,
+                    path=path,
+                    content=content,
+                ),
+            )
+        )
+
+        return make_request(
+            self.reactor,
+            self.site,
+            method=method,
+            path=path,
+            content=content if content is not None else "",
+            shorthand=False,
+            await_result=await_result,
+            custom_headers=custom_headers,
+            client_ip=client_ip,
+        )
+
+    def add_hashes_and_signatures_from_other_server(
+        self,
+        event_dict: JsonDict,
+        room_version: RoomVersion = KNOWN_ROOM_VERSIONS[DEFAULT_ROOM_VERSION],
+    ) -> JsonDict:
+        """Adds hashes and signatures to the given event dict
+
+        Returns:
+             The modified event dict, for convenience
+        """
+        add_hashes_and_signatures(
+            room_version,
+            event_dict,
+            signature_name=self.OTHER_SERVER_NAME,
+            signing_key=self.OTHER_SERVER_SIGNATURE_KEY,
+        )
+        return event_dict
+
+
+def _auth_header_for_request(
+    origin: str,
+    destination: str,
+    signing_key: signedjson.key.SigningKey,
+    method: str,
+    path: str,
+    content: JsonDict | None,
+) -> str:
+    """Build a suitable Authorization header for an outgoing federation request"""
+    request_description: JsonDict = {
+        "method": method,
+        "uri": path,
+        "destination": destination,
+        "origin": origin,
+    }
+    if content is not None:
+        request_description["content"] = content
+    signature_base64 = unpaddedbase64.encode_base64(
+        signing_key.sign(
+            canonicaljson.encode_canonical_json(request_description)
+        ).signature
+    )
+    return (
+        f"X-Matrix origin={origin},"
+        f"key={signing_key.alg}:{signing_key.version},"
+        f"sig={signature_base64}"
+    )
+
+
+def override_config(extra_config: JsonDict) -> Callable[[TV], TV]:
+    """A decorator which can be applied to test functions to give additional HS config
+
+    For use
+
+    For example:
+
+        class MyTestCase(HomeserverTestCase):
+            @override_config({"enable_registration": False, ...})
+            def test_foo(self):
+                ...
+
+    Args:
+        extra_config: Additional config settings to be merged into the default
+            config dict before instantiating the test homeserver.
+    """
+
+    def decorator(func: TV) -> TV:
+        # This attribute is being defined.
+        func._extra_config = extra_config  # type: ignore[attr-defined]
+        return func
+
+    return decorator
+
+
+def skip_unless(condition: bool, reason: str) -> Callable[[TV], TV]:
+    """A test decorator which will skip the decorated test unless a condition is set
+
+    For example:
+
+    class MyTestCase(TestCase):
+        @skip_unless(HAS_FOO, "Cannot test without foo")
+        def test_foo(self):
+            ...
+
+    Args:
+        condition: If true, the test will be skipped
+        reason: the reason to give for skipping the test
+    """
+
+    def decorator(f: TV) -> TV:
+        if not condition:
+            f.skip = reason  # type: ignore
+        return f
+
+    return decorator
+
+
+def _get_dict_differences(dicts: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Return a list of dicts where each dict has the common key/values removed.
+
+    Useful for printing comparisons of prometheus metrics with different labels.
+    """
+    if not dicts:
+        return []
+
+    # Find the common key/values across all dicts
+    common_items = set(dicts[0].items())
+    for d in dicts[1:]:
+        common_items.intersection_update(d.items())
+
+    # Remove the common items from each dict
+    differences = []
+    for d in dicts:
+        diff = {k: v for k, v in d.items() if (k, v) not in common_items}
+        differences.append(diff)
+
+    return differences

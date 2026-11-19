@@ -1,0 +1,1914 @@
+#
+# This file is licensed under the Affero General Public License (AGPL) version 3.
+#
+# Copyright (C) 2023 New Vector, Ltd
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# See the GNU Affero General Public License for more details:
+# <https://www.gnu.org/licenses/agpl-3.0.html>.
+#
+# Originally licensed under the Apache License, Version 2.0:
+# <http://www.apache.org/licenses/LICENSE-2.0>.
+#
+# [This file includes modifications made by New Vector Limited]
+#
+#
+
+import datetime
+import random
+from typing import (
+    Collection,
+    Iterable,
+    Mapping,
+    NamedTuple,
+    TypeVar,
+    cast,
+)
+from unittest import mock
+
+import attr
+from parameterized import parameterized
+
+from twisted.internet.testing import MemoryReactor
+
+from synapse.api.constants import EventTypes
+from synapse.api.room_versions import (
+    KNOWN_ROOM_VERSIONS,
+    EventFormatVersions,
+    RoomVersion,
+)
+from synapse.events import EventBase
+from synapse.events.py_protocol import MSC4242Event, supports_msc4242_state_dag
+from synapse.events.snapshot import EventContext
+from synapse.rest import admin
+from synapse.rest.client import login, room
+from synapse.server import HomeServer
+from synapse.storage.database import LoggingTransaction
+from synapse.storage.types import Cursor
+from synapse.synapse_rust.events import EventInternalMetadata
+from synapse.synapse_rust.room_versions import RoomVersions
+from synapse.types import JsonDict
+from synapse.util.clock import Clock
+from synapse.util.json import json_encoder
+
+import tests.unittest
+import tests.utils
+from tests.test_utils.event_builders import make_test_event
+
+# The silly auth graph we use to test the auth difference algorithm,
+# where the top are the most recent events.
+#
+#   A   B
+#    \ /
+#  D  E
+#  \  |
+#   ` F   C
+#     |  /|
+#     G ´ |
+#     | \ |
+#     H   I
+#     |   |
+#     K   J
+
+AUTH_GRAPH: dict[str, list[str]] = {
+    "a": ["e"],
+    "b": ["e"],
+    "c": ["g", "i"],
+    "d": ["f"],
+    "e": ["f"],
+    "f": ["g"],
+    "g": ["h", "i"],
+    "h": ["k"],
+    "i": ["j"],
+    "k": [],
+    "j": [],
+}
+
+DEPTH_GRAPH = {
+    "a": 7,
+    "b": 7,
+    "c": 4,
+    "d": 6,
+    "e": 6,
+    "f": 5,
+    "g": 3,
+    "h": 2,
+    "i": 2,
+    "k": 1,
+    "j": 1,
+}
+
+T = TypeVar("T")
+
+
+def get_all_topologically_sorted_orders(
+    nodes: Iterable[T],
+    graph: Mapping[T, Collection[T]],
+) -> list[list[T]]:
+    """Given a set of nodes and a graph, return all possible topological
+    orderings.
+    """
+
+    # This is implemented by Kahn's algorithm, and forking execution each time
+    # we have a choice over which node to consider next.
+
+    degree_map = dict.fromkeys(nodes, 0)
+    reverse_graph: dict[T, set[T]] = {}
+
+    for node, edges in graph.items():
+        if node not in degree_map:
+            continue
+
+        for edge in set(edges):
+            if edge in degree_map:
+                degree_map[node] += 1
+
+            reverse_graph.setdefault(edge, set()).add(node)
+        reverse_graph.setdefault(node, set())
+
+    zero_degree = [node for node, degree in degree_map.items() if degree == 0]
+
+    return _get_all_topologically_sorted_orders_inner(
+        reverse_graph, zero_degree, degree_map
+    )
+
+
+def _get_all_topologically_sorted_orders_inner(
+    reverse_graph: dict[T, set[T]],
+    zero_degree: list[T],
+    degree_map: dict[T, int],
+) -> list[list[T]]:
+    new_paths = []
+
+    # Rather than only choosing *one* item from the list of nodes with zero
+    # degree, we "fork" execution and run the algorithm for each node in the
+    # zero degree.
+    for node in zero_degree:
+        new_degree_map = degree_map.copy()
+        new_zero_degree = zero_degree.copy()
+        new_zero_degree.remove(node)
+
+        for edge in reverse_graph.get(node, []):
+            if edge in new_degree_map:
+                new_degree_map[edge] -= 1
+                if new_degree_map[edge] == 0:
+                    new_zero_degree.append(edge)
+
+        paths = _get_all_topologically_sorted_orders_inner(
+            reverse_graph, new_zero_degree, new_degree_map
+        )
+        for path in paths:
+            path.insert(0, node)
+
+        new_paths.extend(paths)
+
+    if not new_paths:
+        return [[]]
+
+    return new_paths
+
+
+def get_all_topologically_consistent_subsets(
+    nodes: Iterable[T],
+    graph: Mapping[T, Collection[T]],
+) -> set[frozenset[T]]:
+    """Get all subsets of the graph where if node N is in the subgraph, then all
+    nodes that can reach that node (i.e. for all X there exists a path X -> N)
+    are in the subgraph.
+    """
+    all_topological_orderings = get_all_topologically_sorted_orders(nodes, graph)
+
+    graph_subsets = set()
+    for ordering in all_topological_orderings:
+        ordering.reverse()
+
+        for idx in range(len(ordering)):
+            graph_subsets.add(frozenset(ordering[:idx]))
+
+    return graph_subsets
+
+
+@attr.s(auto_attribs=True, frozen=True, slots=True)
+class _BackfillSetupInfo:
+    room_id: str
+    depth_map: dict[str, int]
+
+
+class EventFederationWorkerStoreTestCase(tests.unittest.HomeserverTestCase):
+    servlets = [
+        admin.register_servlets,
+        room.register_servlets,
+        login.register_servlets,
+    ]
+
+    def prepare(self, reactor: MemoryReactor, clock: Clock, hs: HomeServer) -> None:
+        self.store = hs.get_datastores().main
+        persist_events = hs.get_datastores().persist_events
+        assert persist_events is not None
+        self.persist_events = persist_events
+
+    def test_get_prev_events_for_room(self) -> None:
+        room_id = "@ROOM:local"
+
+        # add a bunch of events and hashes to act as forward extremities
+        def insert_event(txn: Cursor, i: int) -> None:
+            event_id = "$event_%i:local" % i
+
+            txn.execute(
+                (
+                    "INSERT INTO events ("
+                    "   room_id, event_id, type, depth, topological_ordering,"
+                    "   content, processed, outlier, stream_ordering) "
+                    "VALUES (?, ?, 'm.test', ?, ?, 'test', ?, ?, ?)"
+                ),
+                (room_id, event_id, i, i, True, False, i),
+            )
+
+            txn.execute(
+                (
+                    "INSERT INTO event_forward_extremities (room_id, event_id) "
+                    "VALUES (?, ?)"
+                ),
+                (room_id, event_id),
+            )
+
+        for i in range(20):
+            self.get_success(
+                self.store.db_pool.runInteraction("insert", insert_event, i)
+            )
+
+        # this should get the last ten
+        r = self.get_success(self.store.get_prev_events_for_room(room_id))
+        self.assertEqual(10, len(r))
+        for i in range(10):
+            self.assertEqual("$event_%i:local" % (19 - i), r[i])
+
+    def test_get_rooms_with_many_extremities(self) -> None:
+        room1 = "#room1"
+        room2 = "#room2"
+        room3 = "#room3"
+
+        def insert_event(txn: LoggingTransaction, i: int, room_id: str) -> None:
+            event_id = "$event_%i:local" % i
+
+            # We need to insert into events table to get around the foreign key constraint.
+            self.store.db_pool.simple_insert_txn(
+                txn,
+                table="events",
+                values={
+                    "instance_name": "master",
+                    "stream_ordering": self.store._stream_id_gen.get_next_txn(txn),
+                    "topological_ordering": 1,
+                    "depth": 1,
+                    "event_id": event_id,
+                    "room_id": room_id,
+                    "type": EventTypes.Message,
+                    "processed": True,
+                    "outlier": False,
+                    "origin_server_ts": 0,
+                    "received_ts": 0,
+                    "sender": "@user:local",
+                    "contains_url": False,
+                    "state_key": None,
+                    "rejection_reason": None,
+                },
+            )
+
+            txn.execute(
+                (
+                    "INSERT INTO event_forward_extremities (room_id, event_id) "
+                    "VALUES (?, ?)"
+                ),
+                (room_id, event_id),
+            )
+
+        for i in range(20):
+            self.get_success(
+                self.store.db_pool.runInteraction("insert", insert_event, i, room1)
+            )
+            self.get_success(
+                self.store.db_pool.runInteraction(
+                    "insert", insert_event, i + 100, room2
+                )
+            )
+            self.get_success(
+                self.store.db_pool.runInteraction(
+                    "insert", insert_event, i + 200, room3
+                )
+            )
+
+        # Test simple case
+        r = self.get_success(self.store.get_rooms_with_many_extremities(5, 5, []))
+        self.assertEqual(len(r), 3)
+
+        # Does filter work?
+
+        r = self.get_success(self.store.get_rooms_with_many_extremities(5, 5, [room1]))
+        self.assertTrue(room2 in r)
+        self.assertTrue(room3 in r)
+        self.assertEqual(len(r), 2)
+
+        r = self.get_success(
+            self.store.get_rooms_with_many_extremities(5, 5, [room1, room2])
+        )
+        self.assertEqual(r, [room3])
+
+        # Does filter and limit work?
+
+        r = self.get_success(self.store.get_rooms_with_many_extremities(5, 1, [room1]))
+        self.assertTrue(r == [room2] or r == [room3])
+
+    def _setup_auth_chain(self, use_chain_cover_index: bool) -> str:
+        room_id = "@ROOM:local"
+
+        # Mark the room as maybe having a cover index.
+
+        def store_room(txn: LoggingTransaction) -> None:
+            self.store.db_pool.simple_insert_txn(
+                txn,
+                "rooms",
+                {
+                    "room_id": room_id,
+                    "creator": "room_creator_user_id",
+                    "is_public": True,
+                    "room_version": "6",
+                    "has_auth_chain_index": use_chain_cover_index,
+                },
+            )
+
+        self.get_success(self.store.db_pool.runInteraction("store_room", store_room))
+
+        # We rudely fiddle with the appropriate tables directly, as that's much
+        # easier than constructing events properly.
+
+        def insert_event(txn: LoggingTransaction) -> None:
+            stream_ordering = 0
+
+            for event_id in AUTH_GRAPH:
+                stream_ordering += 1
+                depth = DEPTH_GRAPH[event_id]
+
+                self.store.db_pool.simple_insert_txn(
+                    txn,
+                    table="events",
+                    values={
+                        "event_id": event_id,
+                        "room_id": room_id,
+                        "depth": depth,
+                        "topological_ordering": depth,
+                        "type": "m.test",
+                        "processed": True,
+                        "outlier": False,
+                        "stream_ordering": stream_ordering,
+                    },
+                )
+
+            events = [
+                cast(EventBase, FakeEvent(event_id, room_id, AUTH_GRAPH[event_id]))
+                for event_id in AUTH_GRAPH
+            ]
+            new_event_links = (
+                self.persist_events.calculate_chain_cover_index_for_events_txn(
+                    txn, room_id, [e for e in events if e.is_state()]
+                )
+            )
+            self.persist_events._persist_event_auth_chain_txn(
+                txn,
+                events,
+                new_event_links,
+            )
+
+        self.get_success(
+            self.store.db_pool.runInteraction(
+                "insert",
+                insert_event,
+            )
+        )
+
+        return room_id
+
+    @parameterized.expand([(True,), (False,)])
+    def test_auth_chain_ids(self, use_chain_cover_index: bool) -> None:
+        room_id = self._setup_auth_chain(use_chain_cover_index)
+
+        # a and b have the same auth chain.
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["a"]))
+        self.assertCountEqual(auth_chain_ids, ["e", "f", "g", "h", "i", "j", "k"])
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["b"]))
+        self.assertCountEqual(auth_chain_ids, ["e", "f", "g", "h", "i", "j", "k"])
+        auth_chain_ids = self.get_success(
+            self.store.get_auth_chain_ids(room_id, ["a", "b"])
+        )
+        self.assertCountEqual(auth_chain_ids, ["e", "f", "g", "h", "i", "j", "k"])
+
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["c"]))
+        self.assertCountEqual(auth_chain_ids, ["g", "h", "i", "j", "k"])
+
+        # d and e have the same auth chain.
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["d"]))
+        self.assertCountEqual(auth_chain_ids, ["f", "g", "h", "i", "j", "k"])
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["e"]))
+        self.assertCountEqual(auth_chain_ids, ["f", "g", "h", "i", "j", "k"])
+
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["f"]))
+        self.assertCountEqual(auth_chain_ids, ["g", "h", "i", "j", "k"])
+
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["g"]))
+        self.assertCountEqual(auth_chain_ids, ["h", "i", "j", "k"])
+
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["h"]))
+        self.assertEqual(auth_chain_ids, {"k"})
+
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["i"]))
+        self.assertEqual(auth_chain_ids, {"j"})
+
+        # j and k have no parents.
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["j"]))
+        self.assertEqual(auth_chain_ids, set())
+        auth_chain_ids = self.get_success(self.store.get_auth_chain_ids(room_id, ["k"]))
+        self.assertEqual(auth_chain_ids, set())
+
+        # More complex input sequences.
+        auth_chain_ids = self.get_success(
+            self.store.get_auth_chain_ids(room_id, ["b", "c", "d"])
+        )
+        self.assertCountEqual(auth_chain_ids, ["e", "f", "g", "h", "i", "j", "k"])
+
+        auth_chain_ids = self.get_success(
+            self.store.get_auth_chain_ids(room_id, ["h", "i"])
+        )
+        self.assertCountEqual(auth_chain_ids, ["k", "j"])
+
+        # e gets returned even though include_given is false, but it is in the
+        # auth chain of b.
+        auth_chain_ids = self.get_success(
+            self.store.get_auth_chain_ids(room_id, ["b", "e"])
+        )
+        self.assertCountEqual(auth_chain_ids, ["e", "f", "g", "h", "i", "j", "k"])
+
+        # Test include_given.
+        auth_chain_ids = self.get_success(
+            self.store.get_auth_chain_ids(room_id, ["i"], include_given=True)
+        )
+        self.assertCountEqual(auth_chain_ids, ["i", "j"])
+
+    @parameterized.expand([(True,), (False,)])
+    def test_auth_difference(self, use_chain_cover_index: bool) -> None:
+        room_id = self._setup_auth_chain(use_chain_cover_index)
+
+        # Now actually test that various combinations give the right result:
+        self.assert_auth_diff_is_expected(room_id)
+
+    @parameterized.expand(
+        [
+            [graph_subset]
+            for graph_subset in get_all_topologically_consistent_subsets(
+                AUTH_GRAPH, AUTH_GRAPH
+            )
+        ]
+    )
+    def test_auth_difference_partial(self, graph_subset: Collection[str]) -> None:
+        """Test that if we only have a chain cover index on a partial subset of
+        the room we still get the correct auth chain difference.
+
+        We do this by removing the chain cover index for every valid subset of the
+        graph.
+        """
+        room_id = self._setup_auth_chain(True)
+
+        for event_id in graph_subset:
+            # Remove chain cover from that event.
+            self.get_success(
+                self.store.db_pool.simple_delete(
+                    table="event_auth_chains",
+                    keyvalues={"event_id": event_id},
+                    desc="test_auth_difference_partial_remove",
+                )
+            )
+            self.get_success(
+                self.store.db_pool.simple_insert(
+                    table="event_auth_chain_to_calculate",
+                    values={
+                        "event_id": event_id,
+                        "room_id": room_id,
+                        "type": "",
+                        "state_key": "",
+                    },
+                    desc="test_auth_difference_partial_remove",
+                )
+            )
+
+        self.assert_auth_diff_is_expected(room_id)
+
+    def assert_auth_diff_is_expected(self, room_id: str) -> None:
+        """Assert the auth chain difference returns the correct answers."""
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}])
+        )
+        self.assertSetEqual(difference, {"a", "b"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"c"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "c", "e", "f"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a", "c"}, {"b"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "c"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a", "c"}, {"b", "c"}])
+        )
+        self.assertSetEqual(difference, {"a", "b"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"d"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "d", "e"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"c"}, {"d"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "c", "d", "e", "f"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"e"}])
+        )
+        self.assertSetEqual(difference, {"a", "b"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}])
+        )
+        self.assertSetEqual(difference, set())
+
+    def test_auth_difference_partial_cover(self) -> None:
+        """Test that we correctly handle rooms where not all events have a chain
+        cover calculated. This can happen in some obscure edge cases, including
+        during the background update that calculates the chain cover for old
+        rooms.
+        """
+
+        # We allow partial covers for this test
+        self.hs.get_datastores().main.tests_allow_no_chain_cover_index = True
+
+        room_id = "@ROOM:local"
+
+        # The silly auth graph we use to test the auth difference algorithm,
+        # where the top are the most recent events.
+        #
+        #   A   B
+        #    \ /
+        #  D  E
+        #  \  |
+        #   ` F   C
+        #     |  /|
+        #     G ´ |
+        #     | \ |
+        #     H   I
+        #     |   |
+        #     K   J
+
+        auth_graph: dict[str, list[str]] = {
+            "a": ["e"],
+            "b": ["e"],
+            "c": ["g", "i"],
+            "d": ["f"],
+            "e": ["f"],
+            "f": ["g"],
+            "g": ["h", "i"],
+            "h": ["k"],
+            "i": ["j"],
+            "k": [],
+            "j": [],
+        }
+
+        depth_map = {
+            "a": 7,
+            "b": 7,
+            "c": 4,
+            "d": 6,
+            "e": 6,
+            "f": 5,
+            "g": 3,
+            "h": 2,
+            "i": 2,
+            "k": 1,
+            "j": 1,
+        }
+
+        # We rudely fiddle with the appropriate tables directly, as that's much
+        # easier than constructing events properly.
+
+        def insert_event(txn: LoggingTransaction) -> None:
+            # First insert the room and mark it as having a chain cover.
+            self.store.db_pool.simple_insert_txn(
+                txn,
+                "rooms",
+                {
+                    "room_id": room_id,
+                    "creator": "room_creator_user_id",
+                    "is_public": True,
+                    "room_version": "6",
+                    "has_auth_chain_index": True,
+                },
+            )
+
+            stream_ordering = 0
+
+            for event_id in auth_graph:
+                stream_ordering += 1
+                depth = depth_map[event_id]
+
+                self.store.db_pool.simple_insert_txn(
+                    txn,
+                    table="events",
+                    values={
+                        "event_id": event_id,
+                        "room_id": room_id,
+                        "depth": depth,
+                        "topological_ordering": depth,
+                        "type": "m.test",
+                        "processed": True,
+                        "outlier": False,
+                        "stream_ordering": stream_ordering,
+                    },
+                )
+
+            # Insert all events apart from 'B'
+            events = [
+                cast(EventBase, FakeEvent(event_id, room_id, auth_graph[event_id]))
+                for event_id in auth_graph
+                if event_id != "b"
+            ]
+            new_event_links = (
+                self.persist_events.calculate_chain_cover_index_for_events_txn(
+                    txn, room_id, [e for e in events if e.is_state()]
+                )
+            )
+            self.persist_events._persist_event_auth_chain_txn(
+                txn,
+                events,
+                new_event_links,
+            )
+
+            # Now we insert the event 'B' without a chain cover, by temporarily
+            # pretending the room doesn't have a chain cover.
+
+            self.store.db_pool.simple_update_txn(
+                txn,
+                table="rooms",
+                keyvalues={"room_id": room_id},
+                updatevalues={"has_auth_chain_index": False},
+            )
+
+            events = [cast(EventBase, FakeEvent("b", room_id, auth_graph["b"]))]
+            new_event_links = (
+                self.persist_events.calculate_chain_cover_index_for_events_txn(
+                    txn, room_id, [e for e in events if e.is_state()]
+                )
+            )
+            self.persist_events._persist_event_auth_chain_txn(
+                txn, events, new_event_links
+            )
+
+            self.store.db_pool.simple_update_txn(
+                txn,
+                table="rooms",
+                keyvalues={"room_id": room_id},
+                updatevalues={"has_auth_chain_index": True},
+            )
+
+        self.get_success(
+            self.store.db_pool.runInteraction(
+                "insert",
+                insert_event,
+            )
+        )
+
+        # Now actually test that various combinations give the right result:
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}])
+        )
+        self.assertSetEqual(difference, {"a", "b"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"c"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "c", "e", "f"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a", "c"}, {"b"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "c"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a", "c"}, {"b", "c"}])
+        )
+        self.assertSetEqual(difference, {"a", "b"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"d"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "d", "e"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"c"}, {"d"}])
+        )
+        self.assertSetEqual(difference, {"a", "b", "c", "d", "e", "f"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}, {"b"}, {"e"}])
+        )
+        self.assertSetEqual(difference, {"a", "b"})
+
+        difference = self.get_success(
+            self.store.get_auth_chain_difference(room_id, [{"a"}])
+        )
+        self.assertSetEqual(difference, set())
+
+    def test_conflicted_subgraph(self) -> None:
+        """Test that the conflicted subgraph code in state res v2.1 can walk arbitrary length links
+        and chains.
+
+        We construct a chain cover index like this:
+
+        A1 <- A2 <- A3
+               ^--- B1 <- B2 <- B3
+                           ^--- C1 <- C2 <- C3     v--- G1 <- G2
+                                 ^--- D1 <- D2 <- D3
+                                             ^--- E1
+                                                   ^--- F1 <- F2
+
+        ..and then pick various events to be conflicted / additional backwards reachable to assert
+        that the code walks the chains correctly. We're particularly interested in ensuring that
+        the code walks multiple links between chains, hence why we have so many chains.
+        """
+
+        class TestNode(NamedTuple):
+            event_id: str
+            chain_id: int
+            seq_num: int
+
+        class TestLink(NamedTuple):
+            origin_chain_and_seq: tuple[int, int]
+            target_chain_and_seq: tuple[int, int]
+
+        # Map to chain IDs / seq nums
+        nodes: list[TestNode] = [
+            TestNode("A1", 1, 1),
+            TestNode("A2", 1, 2),
+            TestNode("A3", 1, 3),
+            TestNode("B1", 2, 1),
+            TestNode("B2", 2, 2),
+            TestNode("B3", 2, 3),
+            TestNode("C1", 3, 1),
+            TestNode("C2", 3, 2),
+            TestNode("C3", 3, 3),
+            TestNode("D1", 4, 1),
+            TestNode("D2", 4, 2),
+            TestNode("D3", 4, 3),
+            TestNode("E1", 5, 1),
+            TestNode("F1", 6, 1),
+            TestNode("F2", 6, 2),
+            TestNode("G1", 7, 1),
+            TestNode("G2", 7, 2),
+        ]
+        links: list[TestLink] = [
+            TestLink((2, 1), (1, 2)),  # B1 -> A2
+            TestLink((3, 1), (2, 2)),  # C1 -> B2
+            TestLink((4, 1), (3, 1)),  # D1 -> C1
+            TestLink((5, 1), (4, 2)),  # E1 -> D2
+            TestLink((6, 1), (5, 1)),  # F1 -> E1
+            TestLink((7, 1), (4, 3)),  # G1 -> D3
+        ]
+
+        # populate the chain cover index tables as that's all we need
+        for node in nodes:
+            self.get_success(
+                self.store.db_pool.simple_insert(
+                    "event_auth_chains",
+                    {
+                        "event_id": node.event_id,
+                        "chain_id": node.chain_id,
+                        "sequence_number": node.seq_num,
+                    },
+                    desc="insert",
+                )
+            )
+        for link in links:
+            self.get_success(
+                self.store.db_pool.simple_insert(
+                    "event_auth_chain_links",
+                    {
+                        "origin_chain_id": link.origin_chain_and_seq[0],
+                        "origin_sequence_number": link.origin_chain_and_seq[1],
+                        "target_chain_id": link.target_chain_and_seq[0],
+                        "target_sequence_number": link.target_chain_and_seq[1],
+                    },
+                    desc="insert",
+                )
+            )
+
+        # Define the test cases
+        class TestCase(NamedTuple):
+            name: str
+            conflicted: set[str]
+            additional_backwards_reachable: set[str]
+            want_conflicted_subgraph: set[str]
+
+        # Reminder:
+        # A1 <- A2 <- A3
+        #        ^--- B1 <- B2 <- B3
+        #                    ^--- C1 <- C2 <- C3     v--- G1 <- G2
+        #                          ^--- D1 <- D2 <- D3
+        #                                      ^--- E1
+        #                                            ^--- F1 <- F2
+        test_cases = [
+            TestCase(
+                name="basic_single_chain",
+                conflicted={"B1", "B3"},
+                additional_backwards_reachable=set(),
+                want_conflicted_subgraph={"B1", "B2", "B3"},
+            ),
+            TestCase(
+                name="basic_single_link",
+                conflicted={"A1", "B2"},
+                additional_backwards_reachable=set(),
+                want_conflicted_subgraph={"A1", "A2", "B1", "B2"},
+            ),
+            TestCase(
+                name="basic_multi_link",
+                conflicted={"B1", "F1"},
+                additional_backwards_reachable=set(),
+                want_conflicted_subgraph={"B1", "B2", "C1", "D1", "D2", "E1", "F1"},
+            ),
+            # Repeat these tests but put the later event as an additional backwards reachable event.
+            # The output should be the same.
+            TestCase(
+                name="basic_single_chain_as_additional",
+                conflicted={"B1"},
+                additional_backwards_reachable={"B3"},
+                want_conflicted_subgraph={"B1", "B2", "B3"},
+            ),
+            TestCase(
+                name="basic_single_link_as_additional",
+                conflicted={"A1"},
+                additional_backwards_reachable={"B2"},
+                want_conflicted_subgraph={"A1", "A2", "B1", "B2"},
+            ),
+            TestCase(
+                name="basic_multi_link_as_additional",
+                conflicted={"B1"},
+                additional_backwards_reachable={"F1"},
+                want_conflicted_subgraph={"B1", "B2", "C1", "D1", "D2", "E1", "F1"},
+            ),
+            TestCase(
+                name="mixed_multi_link",
+                conflicted={"D1", "F1"},
+                additional_backwards_reachable={"G1"},
+                want_conflicted_subgraph={"D1", "D2", "D3", "E1", "F1", "G1"},
+            ),
+            TestCase(
+                name="additional_backwards_doesnt_add_forwards_info",
+                conflicted={"C1", "C3"},
+                # This is on the path to the root but Chain C isn't forwards reachable so this doesn't
+                # change anything.
+                additional_backwards_reachable={"B1"},
+                want_conflicted_subgraph={"C1", "C2", "C3"},
+            ),
+            TestCase(
+                name="empty_subgraph",
+                conflicted={
+                    "B3",
+                    "C3",
+                },  # these can't reach each other going forwards, so the subgraph is empty
+                additional_backwards_reachable=set(),
+                want_conflicted_subgraph={"B3", "C3"},
+            ),
+            TestCase(
+                name="empty_subgraph_with_additional",
+                conflicted={"C1"},
+                # This is on the path to the root but Chain C isn't forwards reachable so this doesn't
+                # change anything.
+                additional_backwards_reachable={"B1"},
+                want_conflicted_subgraph={"C1"},
+            ),
+            TestCase(
+                name="empty_subgraph_single_conflict",
+                conflicted={"C1"},  # no subgraph can form as you need 2+
+                additional_backwards_reachable=set(),
+                want_conflicted_subgraph={"C1"},
+            ),
+        ]
+
+        def run_test(txn: LoggingTransaction, test_case: TestCase) -> None:
+            result = self.store._get_auth_chain_difference_using_cover_index_txn(
+                txn,
+                "!not_relevant",
+                [test_case.conflicted.union(test_case.additional_backwards_reachable)],
+                test_case.conflicted,
+                test_case.additional_backwards_reachable,
+            )
+            self.assertEqual(
+                result.conflicted_subgraph,
+                test_case.want_conflicted_subgraph,
+                f"{test_case.name} : conflicted subgraph mismatch",
+            )
+
+        for test_case in test_cases:
+            self.get_success(
+                self.store.db_pool.runInteraction(
+                    f"test_case_{test_case.name}", run_test, test_case
+                )
+            )
+
+    @parameterized.expand(
+        [(room_version,) for room_version in KNOWN_ROOM_VERSIONS.values()]
+    )
+    def test_prune_inbound_federation_queue(self, room_version: RoomVersion) -> None:
+        """Test that pruning of inbound federation queues work"""
+
+        room_id = "some_room_id"
+
+        def prev_event_format(prev_event_id: str) -> tuple[str, dict] | str:
+            """Account for differences in prev_events format across room versions"""
+            if room_version.event_format == EventFormatVersions.ROOM_V1_V2:
+                return prev_event_id, {}
+
+            return prev_event_id
+
+        # Insert a bunch of events that all reference the previous one.
+        self.get_success(
+            self.store.db_pool.simple_insert_many(
+                table="federation_inbound_events_staging",
+                keys=(
+                    "origin",
+                    "room_id",
+                    "received_ts",
+                    "event_id",
+                    "event_json",
+                    "internal_metadata",
+                ),
+                values=[
+                    (
+                        "some_origin",
+                        room_id,
+                        0,
+                        f"$fake_event_id_{i + 1}",
+                        json_encoder.encode(
+                            {"prev_events": [prev_event_format(f"$fake_event_id_{i}")]}
+                        ),
+                        "{}",
+                    )
+                    for i in range(500)
+                ],
+                desc="test_prune_inbound_federation_queue",
+            )
+        )
+
+        # Calling prune once should return True, i.e. a prune happen. The second
+        # time it shouldn't.
+        pruned = self.get_success(
+            self.store.prune_staged_events_in_room(room_id, room_version)
+        )
+        self.assertTrue(pruned)
+
+        pruned = self.get_success(
+            self.store.prune_staged_events_in_room(room_id, room_version)
+        )
+        self.assertFalse(pruned)
+
+        # Assert that we only have a single event left in the queue, and that it
+        # is the last one.
+        count = self.get_success(
+            self.store.db_pool.simple_select_one_onecol(
+                table="federation_inbound_events_staging",
+                keyvalues={"room_id": room_id},
+                retcol="COUNT(*)",
+                desc="test_prune_inbound_federation_queue",
+            )
+        )
+        self.assertEqual(count, 1)
+
+        next_staged_event_info = self.get_success(
+            self.store.get_next_staged_event_id_for_room(room_id)
+        )
+        assert next_staged_event_info
+        _, event_id = next_staged_event_info
+        self.assertEqual(event_id, "$fake_event_id_500")
+
+    def _setup_room_for_backfill_tests(self) -> _BackfillSetupInfo:
+        """
+        Sets up a room with various events and backward extremities to test
+        backfill functions against.
+
+        Returns:
+            _BackfillSetupInfo including the `room_id` to test against and
+            `depth_map` of events in the room
+        """
+        room_id = "!backfill-room-test:some-host"
+
+        # The silly graph we use to test grabbing backward extremities,
+        # where the top is the oldest events.
+        #    1 (oldest)
+        #    |
+        #    2 ⹁
+        #    |  \
+        #    |   [b1, b2, b3]
+        #    |   |
+        #    |   A
+        #    |  /
+        #    3 {
+        #    |  \
+        #    |   [b4, b5, b6]
+        #    |   |
+        #    |   B
+        #    |  /
+        #    4 ´
+        #    |
+        #    5 (newest)
+
+        event_graph: dict[str, list[str]] = {
+            "1": [],
+            "2": ["1"],
+            "3": ["2", "A"],
+            "4": ["3", "B"],
+            "5": ["4"],
+            "A": ["b1", "b2", "b3"],
+            "b1": ["2"],
+            "b2": ["2"],
+            "b3": ["2"],
+            "B": ["b4", "b5", "b6"],
+            "b4": ["3"],
+            "b5": ["3"],
+            "b6": ["3"],
+        }
+
+        depth_map: dict[str, int] = {
+            "1": 1,
+            "2": 2,
+            "b1": 3,
+            "b2": 3,
+            "b3": 3,
+            "A": 4,
+            "3": 5,
+            "b4": 6,
+            "b5": 6,
+            "b6": 6,
+            "B": 7,
+            "4": 8,
+            "5": 9,
+        }
+
+        # The events we have persisted on our server.
+        # The rest are events in the room but not backfilled tet.
+        our_server_events = {"5", "4", "B", "3", "A"}
+
+        complete_event_dict_map: dict[str, JsonDict] = {}
+        stream_ordering = 0
+        for event_id, prev_event_ids in event_graph.items():
+            depth = depth_map[event_id]
+
+            complete_event_dict_map[event_id] = {
+                "event_id": event_id,
+                "type": "test_regular_type",
+                "room_id": room_id,
+                "sender": "@sender",
+                "prev_event_ids": prev_event_ids,
+                "auth_event_ids": [],
+                "origin_server_ts": stream_ordering,
+                "depth": depth,
+                "stream_ordering": stream_ordering,
+                "content": {"body": "event" + event_id},
+            }
+
+            stream_ordering += 1
+
+        def populate_db(txn: LoggingTransaction) -> None:
+            # Insert the room to satisfy the foreign key constraint of
+            # `event_failed_pull_attempts`
+            self.store.db_pool.simple_insert_txn(
+                txn,
+                "rooms",
+                {
+                    "room_id": room_id,
+                    "creator": "room_creator_user_id",
+                    "is_public": True,
+                    "room_version": "6",
+                },
+            )
+
+            # Insert our server events
+            for event_id in our_server_events:
+                event_dict = complete_event_dict_map[event_id]
+
+                self.store.db_pool.simple_insert_txn(
+                    txn,
+                    table="events",
+                    values={
+                        "event_id": event_dict.get("event_id"),
+                        "type": event_dict.get("type"),
+                        "room_id": event_dict.get("room_id"),
+                        "depth": event_dict.get("depth"),
+                        "topological_ordering": event_dict.get("depth"),
+                        "stream_ordering": event_dict.get("stream_ordering"),
+                        "processed": True,
+                        "outlier": False,
+                    },
+                )
+
+            # Insert the event edges
+            for event_id in our_server_events:
+                for prev_event_id in event_graph[event_id]:
+                    self.store.db_pool.simple_insert_txn(
+                        txn,
+                        table="event_edges",
+                        values={
+                            "event_id": event_id,
+                            "prev_event_id": prev_event_id,
+                            "room_id": room_id,
+                        },
+                    )
+
+            # Insert the backward extremities
+            prev_events_of_our_events = {
+                prev_event_id
+                for our_server_event in our_server_events
+                for prev_event_id in complete_event_dict_map[our_server_event][
+                    "prev_event_ids"
+                ]
+            }
+            backward_extremities = prev_events_of_our_events - our_server_events
+            for backward_extremity in backward_extremities:
+                self.store.db_pool.simple_insert_txn(
+                    txn,
+                    table="event_backward_extremities",
+                    values={
+                        "event_id": backward_extremity,
+                        "room_id": room_id,
+                    },
+                )
+
+        self.get_success(
+            self.store.db_pool.runInteraction(
+                "_setup_room_for_backfill_tests_populate_db",
+                populate_db,
+            )
+        )
+
+        return _BackfillSetupInfo(room_id=room_id, depth_map=depth_map)
+
+    def test_get_backfill_points_in_room(self) -> None:
+        """
+        Test to make sure only backfill points that are older and come before
+        the `current_depth` are returned.
+        """
+        setup_info = self._setup_room_for_backfill_tests()
+        room_id = setup_info.room_id
+        depth_map = setup_info.depth_map
+
+        # Try at "B"
+        backfill_points = self.get_success(
+            self.store.get_backfill_points_in_room(room_id, depth_map["B"], limit=100)
+        )
+        backfill_event_ids = [backfill_point[0] for backfill_point in backfill_points]
+        self.assertEqual(backfill_event_ids, ["b6", "b5", "b4", "2", "b3", "b2", "b1"])
+
+        # Try at "A"
+        backfill_points = self.get_success(
+            self.store.get_backfill_points_in_room(room_id, depth_map["A"], limit=100)
+        )
+        backfill_event_ids = [backfill_point[0] for backfill_point in backfill_points]
+        # Event "2" has a depth of 2 but is not included here because we only
+        # know the approximate depth of 5 from our event "3".
+        self.assertListEqual(backfill_event_ids, ["b3", "b2", "b1"])
+
+    def test_get_backfill_points_in_room_excludes_events_we_have_attempted(
+        self,
+    ) -> None:
+        """
+        Test to make sure that events we have attempted to backfill (and within
+        backoff timeout duration) do not show up as an event to backfill again.
+        """
+        setup_info = self._setup_room_for_backfill_tests()
+        room_id = setup_info.room_id
+        depth_map = setup_info.depth_map
+
+        # Record some attempts to backfill these events which will make
+        # `get_backfill_points_in_room` exclude them because we
+        # haven't passed the backoff interval.
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b5", "fake cause")
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b4", "fake cause")
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b3", "fake cause")
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b2", "fake cause")
+        )
+
+        # No time has passed since we attempted to backfill ^
+
+        # Try at "B"
+        backfill_points = self.get_success(
+            self.store.get_backfill_points_in_room(room_id, depth_map["B"], limit=100)
+        )
+        backfill_event_ids = [backfill_point[0] for backfill_point in backfill_points]
+        # Only the backfill points that we didn't record earlier exist here.
+        self.assertEqual(backfill_event_ids, ["b6", "2", "b1"])
+
+    def test_get_backfill_points_in_room_attempted_event_retry_after_backoff_duration(
+        self,
+    ) -> None:
+        """
+        Test to make sure after we fake attempt to backfill event "b3" many times,
+        we can see retry and see the "b3" again after the backoff timeout duration
+        has exceeded.
+        """
+        setup_info = self._setup_room_for_backfill_tests()
+        room_id = setup_info.room_id
+        depth_map = setup_info.depth_map
+
+        # Record some attempts to backfill these events which will make
+        # `get_backfill_points_in_room` exclude them because we
+        # haven't passed the backoff interval.
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b3", "fake cause")
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b1", "fake cause")
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b1", "fake cause")
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b1", "fake cause")
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(room_id, "b1", "fake cause")
+        )
+
+        # Now advance time by 2 hours and we should only be able to see "b3"
+        # because we have waited long enough for the single attempt (2^1 hours)
+        # but we still shouldn't see "b1" because we haven't waited long enough
+        # for this many attempts. We didn't do anything to "b2" so it should be
+        # visible regardless.
+        self.reactor.advance(datetime.timedelta(hours=2).total_seconds())
+
+        # Try at "A" and make sure that "b1" is not in the list because we've
+        # already attempted many times
+        backfill_points = self.get_success(
+            self.store.get_backfill_points_in_room(room_id, depth_map["A"], limit=100)
+        )
+        backfill_event_ids = [backfill_point[0] for backfill_point in backfill_points]
+        self.assertEqual(backfill_event_ids, ["b3", "b2"])
+
+        # Now advance time by 20 hours (above 2^4 because we made 4 attemps) and
+        # see if we can now backfill it
+        self.reactor.advance(datetime.timedelta(hours=20).total_seconds())
+
+        # Try at "A" again after we advanced enough time and we should see "b3" again
+        backfill_points = self.get_success(
+            self.store.get_backfill_points_in_room(room_id, depth_map["A"], limit=100)
+        )
+        backfill_event_ids = [backfill_point[0] for backfill_point in backfill_points]
+        self.assertEqual(backfill_event_ids, ["b3", "b2", "b1"])
+
+    def test_get_backfill_points_in_room_works_after_many_failed_pull_attempts_that_could_naively_overflow(
+        self,
+    ) -> None:
+        """
+        A test that reproduces https://github.com/matrix-org/synapse/issues/13929 (Postgres only).
+
+        Test to make sure we can still get backfill points after many failed pull
+        attempts that cause us to backoff to the limit. Even if the backoff formula
+        would tell us to wait for more seconds than can be expressed in a 32 bit
+        signed int.
+        """
+        setup_info = self._setup_room_for_backfill_tests()
+        room_id = setup_info.room_id
+        depth_map = setup_info.depth_map
+
+        # Pretend that we have tried and failed 10 times to backfill event b1.
+        for _ in range(10):
+            self.get_success(
+                self.store.record_event_failed_pull_attempt(room_id, "b1", "fake cause")
+            )
+
+        # If the backoff periods grow without limit:
+        # After the first failed attempt, we would have backed off for 1 << 1 = 2 hours.
+        # After the second failed attempt we would have backed off for 1 << 2 = 4 hours,
+        # so after the 10th failed attempt we should backoff for 1 << 10 == 1024 hours.
+        # Wait 1100 hours just so we have a nice round number.
+        self.reactor.advance(datetime.timedelta(hours=1100).total_seconds())
+
+        # 1024 hours in milliseconds is 1024 * 3600000, which exceeds the largest 32 bit
+        # signed integer. The bug we're reproducing is that this overflow causes an
+        # error in postgres preventing us from fetching a set of backwards extremities
+        # to retry fetching.
+        backfill_points = self.get_success(
+            self.store.get_backfill_points_in_room(room_id, depth_map["A"], limit=100)
+        )
+
+        # We should aim to fetch all backoff points: b1's latest backoff period has
+        # expired, and we haven't tried the rest.
+        backfill_event_ids = [backfill_point[0] for backfill_point in backfill_points]
+        self.assertEqual(backfill_event_ids, ["b3", "b2", "b1"])
+
+    def test_get_event_ids_with_failed_pull_attempts(self) -> None:
+        """
+        Test to make sure we properly get event_ids based on whether they have any
+        failed pull attempts.
+        """
+        # Create the room
+        user_id = self.register_user("alice", "test")
+        tok = self.login("alice", "test")
+        room_id = self.helper.create_room_as(room_creator=user_id, tok=tok)
+
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(
+                room_id, "$failed_event_id1", "fake cause"
+            )
+        )
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(
+                room_id, "$failed_event_id2", "fake cause"
+            )
+        )
+
+        event_ids_with_failed_pull_attempts = self.get_success(
+            self.store.get_event_ids_with_failed_pull_attempts(
+                event_ids=[
+                    "$failed_event_id1",
+                    "$fresh_event_id1",
+                    "$failed_event_id2",
+                    "$fresh_event_id2",
+                ]
+            )
+        )
+
+        self.assertEqual(
+            event_ids_with_failed_pull_attempts,
+            {"$failed_event_id1", "$failed_event_id2"},
+        )
+
+    def test_get_event_ids_to_not_pull_from_backoff(self) -> None:
+        """
+        Test to make sure only event IDs we should backoff from are returned.
+        """
+        # Create the room
+        user_id = self.register_user("alice", "test")
+        tok = self.login("alice", "test")
+        room_id = self.helper.create_room_as(room_creator=user_id, tok=tok)
+
+        failure_time = self.clock.time_msec()
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(
+                room_id, "$failed_event_id", "fake cause"
+            )
+        )
+
+        event_ids_with_backoff = self.get_success(
+            self.store.get_event_ids_to_not_pull_from_backoff(
+                room_id=room_id, event_ids=["$failed_event_id", "$normal_event_id"]
+            )
+        )
+
+        self.assertEqual(
+            event_ids_with_backoff,
+            # We expect a 2^1 hour backoff after a single failed attempt.
+            {"$failed_event_id": failure_time + 2 * 60 * 60 * 1000},
+        )
+
+    def test_get_event_ids_to_not_pull_from_backoff_retry_after_backoff_duration(
+        self,
+    ) -> None:
+        """
+        Test to make sure no event IDs are returned after the backoff duration has
+        elapsed.
+        """
+        # Create the room
+        user_id = self.register_user("alice", "test")
+        tok = self.login("alice", "test")
+        room_id = self.helper.create_room_as(room_creator=user_id, tok=tok)
+
+        self.get_success(
+            self.store.record_event_failed_pull_attempt(
+                room_id, "$failed_event_id", "fake cause"
+            )
+        )
+
+        # Now advance time by 2 hours so we wait long enough for the single failed
+        # attempt (2^1 hours).
+        self.reactor.advance(datetime.timedelta(hours=2).total_seconds())
+
+        event_ids_with_backoff = self.get_success(
+            self.store.get_event_ids_to_not_pull_from_backoff(
+                room_id=room_id, event_ids=["$failed_event_id", "$normal_event_id"]
+            )
+        )
+        # Since this function only returns events we should backoff from, time has
+        # elapsed past the backoff range so there is no events to backoff from.
+        self.assertEqual(event_ids_with_backoff, {})
+
+    def _create_msc4242_room(self) -> tuple[str, str]:
+        """Create an MSC4242 room with an additional join rules state event.
+
+        Returns:
+            A tuple of the room ID and the event ID of the most recent state event.
+        """
+        user_id = self.register_user("alice", "test")
+        tok = self.login("alice", "test")
+        room_id = self.helper.create_room_as(
+            room_creator=user_id,
+            tok=tok,
+            room_version=RoomVersions.MSC4242v12.identifier,
+        )
+        resp = self.helper.send_state(
+            room_id,
+            "m.room.join_rules",
+            {"join_rule": "knock"},
+            tok=tok,
+        )
+        return room_id, resp["event_id"]
+
+    @tests.unittest.override_config(
+        {"experimental_features": {"msc4242_enabled": True}}
+    )
+    def test_get_state_dag(self) -> None:
+        """
+        Test that MSC4242 state dag rooms can return the complete state dag on request.
+        """
+        room_id, latest = self._create_msc4242_room()
+        state_dag = self.get_success(
+            self.store.get_state_dag(room_id, {latest}),
+        )
+        # create <- member <- pl <- join_rules <- his vis <- join_rules
+        self.assertEquals(len(state_dag), 6)
+        want_types = [
+            EventTypes.Create,
+            EventTypes.Member,
+            EventTypes.PowerLevels,
+            EventTypes.JoinRules,
+            EventTypes.RoomHistoryVisibility,
+            EventTypes.JoinRules,
+        ]
+        got_types = []
+        curr = {latest}
+        while len(curr) > 0:
+            event_id = curr.pop()
+            ev = state_dag[event_id]
+            got_types.append(ev.type)
+            curr.update(ev.prev_state_events)
+        got_types.reverse()  # we walked up the graph but want_types is walking down
+        self.assertEqual(got_types, want_types)
+
+    @tests.unittest.override_config(
+        {"experimental_features": {"msc4242_enabled": True}}
+    )
+    def test_get_state_dag_at_create_event(self) -> None:
+        """
+        Test that asking for the state DAG at the create event returns just the create event:
+        we always return the requested forward extremities, and there are no earlier events to
+        walk back to.
+        """
+        room_id, _ = self._create_msc4242_room()
+        # Room IDs are the hash of the create event in this room version, so the create event
+        # ID is derivable from the room ID.
+        create_event_id = f"${room_id[1:]}"
+        state_dag = self.get_success(
+            self.store.get_state_dag(room_id, {create_event_id}),
+        )
+        self.assertEqual(list(state_dag), [create_event_id])
+
+
+class EventFederationGetMissingEventsStateDAGTestCase(
+    tests.unittest.HomeserverTestCase
+):
+    servlets = [
+        admin.register_servlets,
+        room.register_servlets,
+        login.register_servlets,
+    ]
+
+    def prepare(self, reactor: MemoryReactor, clock: Clock, hs: HomeServer) -> None:
+        self.store = hs.get_datastores().main
+        persist_events = hs.get_datastores().persist_events
+        assert persist_events is not None
+        self.persist_events = persist_events
+
+        # Primarily testing to make sure that we sort events
+        # correctly when there are multiple prev_state_events
+        #       .- C -- D ---.
+        # A <- B             E
+        #       `- R -- W --`
+        #           `-- T -`
+        graph: dict[str, list[str]] = {
+            "A": [],
+            "B": ["A"],
+            "C": ["B"],
+            "R": ["B"],
+            "D": ["C"],
+            "W": ["R"],
+            "T": ["R"],
+            "E": ["W", "D", "T"],
+        }
+        self.graph = graph
+        (self.room_id, self.graph_events) = self._persist_state_dag(
+            "@test_get_missing_events_state_dag:localhost", graph
+        )
+
+    def _persist_state_dag(
+        self, creator: str, graph: dict[str, list[str]]
+    ) -> tuple[str, dict[str, MSC4242Event]]:
+        """Build and persist a state DAG in its own room, as `build_state_dag` returns it."""
+        (room_id, graph_events) = build_state_dag(creator, graph)
+
+        def insert(txn: LoggingTransaction) -> None:
+            mock_context = mock.Mock(spec=EventContext)
+            mock_context.rejected = False
+            for ev in graph_events.values():
+                # store the event first to satisfy fk constraints
+                self.persist_events._store_event_txn(
+                    txn,
+                    [(ev, mock_context)],
+                )
+                self.persist_events._store_state_dag_edges(
+                    txn,
+                    ev,
+                )
+
+        # satisfy fk constraints
+        self.get_success(
+            self.store.store_room(room_id, creator, False, RoomVersions.MSC4242v12)
+        )
+        self.get_success(
+            self.store.db_pool.runInteraction(
+                "_store_state_dag_edges",
+                insert,
+            )
+        )
+        return room_id, graph_events
+
+    def _get_missing_events(
+        self,
+        latest: list[str],
+        earliest: list[str],
+        limit: int,
+        room_id: str | None = None,
+        graph_events: dict[str, MSC4242Event] | None = None,
+    ) -> list[str]:
+        """Run `get_missing_events_state_dag` in terms of fake event IDs, returning the fake
+        event IDs which came back. Queries the room built in `prepare` unless told otherwise.
+        """
+        if room_id is None or graph_events is None:
+            room_id = self.room_id
+            graph_events = self.graph_events
+        fake_event_ids = {ev.event_id: fake for fake, ev in graph_events.items()}
+        got = self.get_success(
+            self.store.get_missing_events_state_dag(
+                room_id=room_id,
+                earliest_event_ids=[graph_events[fake].event_id for fake in earliest],
+                latest_event_ids=[graph_events[fake].event_id for fake in latest],
+                limit=limit,
+            ),
+        )
+        return [fake_event_ids[ev.event_id] for ev in got]
+
+    @parameterized.expand(
+        [
+            (["E"], ["D", "T", "W"], 3),
+            (["E"], ["D", "T"], 2),
+            (["E"], ["D"], 1),
+            (["W", "T", "D"], ["C", "R"], 2),
+            # breadth first and new entries are added to the end, sorted lexicographically
+            (["E"], ["D", "T", "W", "C", "R", "B", "A"], 100),
+            # we should sort the latest values initially
+            (["E", "C"], ["B", "D", "T", "W"], 4),
+            (["C", "E"], ["B", "D", "T", "W"], 4),
+            # dupes are ignored
+            (["E", "E", "C", "C", "C"], ["B", "D", "T", "W"], 4),
+            # include latest events in response. W included because reachable from E.
+            # sort order is based on # hops not processing order of parents
+            # (which would produce D,T,W,R as E is processed first, then W).
+            (["W", "E"], ["D", "R", "T", "W"], 4),
+        ]
+    )
+    @tests.unittest.override_config(
+        {"experimental_features": {"msc4242_enabled": True}}
+    )
+    def test_get_missing_events_state_dag(
+        self, latest: list[str], want: list[str], limit: int
+    ) -> None:
+        #       .- C -- D ---.
+        # A <- B             E
+        #       `- R -- W --`
+        #           `-- T -`
+        self.assertEquals(
+            self._get_missing_events(latest=latest, earliest=[], limit=limit),
+            want,
+            f"latest={latest} want={want} limit={limit}",
+        )
+        # These expectations are written by hand, so use them to check `walk_state_dag`, which
+        # the randomly generated graphs below are compared against.
+        self.assertEquals(
+            walk_state_dag(self.graph, self.graph_events, latest, [], limit),
+            want,
+            f"latest={latest} want={want} limit={limit}",
+        )
+
+    @tests.unittest.override_config(
+        {"experimental_features": {"msc4242_enabled": True}}
+    )
+    def test_get_missing_events_state_dag_limit_truncates(self) -> None:
+        """Lowering `limit` must truncate the result rather than change it.
+
+        `limit` also bounds how many hops the walk takes, so this checks the two uses agree:
+        as every extra hop contributes at least one event, a shallower walk cannot miss an
+        event that a `limit`-sized response should have contained.
+        """
+        full = self._get_missing_events(
+            latest=["E"], earliest=[], limit=len(self.graph_events)
+        )
+        self.assertEquals(full, ["D", "T", "W", "C", "R", "B", "A"])
+        for limit in range(1, len(full) + 1):
+            self.assertEquals(
+                self._get_missing_events(latest=["E"], earliest=[], limit=limit),
+                full[:limit],
+                f"limit={limit}",
+            )
+
+    @tests.unittest.override_config(
+        {"experimental_features": {"msc4242_enabled": True}}
+    )
+    def test_get_missing_events_state_dag_returns_nothing(self) -> None:
+        """The cases where there is nothing to walk back to."""
+        # Nothing was asked for.
+        self.assertEquals(
+            self._get_missing_events(latest=["E"], earliest=[], limit=0), []
+        )
+        # Every event in the room has already been seen.
+        self.assertEquals(
+            self._get_missing_events(
+                latest=["E"], earliest=list(self.graph), limit=100
+            ),
+            [],
+        )
+        # Every event walked back from has already been seen.
+        self.assertEquals(
+            self._get_missing_events(latest=["E", "C"], earliest=["C", "E"], limit=100),
+            [],
+        )
+
+    @tests.unittest.override_config(
+        {"experimental_features": {"msc4242_enabled": True}}
+    )
+    def test_get_missing_events_state_dag_random_graphs(self) -> None:
+        """Check the query against a direct implementation of the MSC4242 ordering.
+
+        Uses randomly generated DAGs, as the hand-written cases above can only cover the
+        shapes we thought to write down. The seed is fixed so that a failure is reproducible
+        and cannot appear on an unrelated change.
+        """
+        rand = random.Random(42)
+        # Single letters keep `build_state_dag`'s hash mining cheap. At least 4 events, as
+        # smaller graphs have too little to order for the walk to be interesting.
+        names = "ABCDEFGH"
+        for room_number in range(20):
+            # Each event picks its prev_state_events from the events before it, which keeps
+            # the graph acyclic and in causal order. "A" is the create event.
+            graph: dict[str, list[str]] = {names[0]: []}
+            for index in range(1, rand.randint(4, len(names))):
+                graph[names[index]] = sorted(
+                    rand.sample(names[:index], rand.randint(1, index))
+                )
+            built = list(graph)
+            (room_id, graph_events) = self._persist_state_dag(
+                f"@test_random_state_dag_{room_number}:localhost", graph
+            )
+
+            for _ in range(3):
+                # `latest` is sampled with replacement, as callers can repeat an event ID.
+                latest = [
+                    rand.choice(built) for _ in range(rand.randint(1, len(built)))
+                ]
+                earliest = rand.sample(built, rand.randint(0, len(built) // 2))
+                limit = rand.randint(0, len(built) + 1)
+                message = (
+                    f"graph={graph} latest={latest} earliest={earliest} limit={limit}"
+                )
+                self.assertEquals(
+                    self._get_missing_events(
+                        latest=latest,
+                        earliest=earliest,
+                        limit=limit,
+                        room_id=room_id,
+                        graph_events=graph_events,
+                    ),
+                    walk_state_dag(graph, graph_events, latest, earliest, limit),
+                    message,
+                )
+
+                # Lowering `limit` must truncate the result rather than change it. Take the
+                # limit from the events actually available rather than from the random one,
+                # which is often high enough that nothing is dropped.
+                full = self._get_missing_events(
+                    latest=latest,
+                    earliest=earliest,
+                    limit=len(built),
+                    room_id=room_id,
+                    graph_events=graph_events,
+                )
+                if len(full) > 1:
+                    self.assertEquals(
+                        self._get_missing_events(
+                            latest=latest,
+                            earliest=earliest,
+                            limit=len(full) - 1,
+                            room_id=room_id,
+                            graph_events=graph_events,
+                        ),
+                        full[:-1],
+                        message,
+                    )
+
+    @tests.unittest.override_config(
+        {"experimental_features": {"msc4242_enabled": True}}
+    )
+    def test_get_missing_events_state_dag_with_cycle(self) -> None:
+        """The walk must terminate even if the edges table contains a cycle.
+
+        A cycle cannot be produced by the normal write path, as an event's prev_state_events
+        are fixed at creation and its event ID is a hash of them. Insert one directly to check
+        that the query is bounded regardless.
+        """
+        # Claim that A (the create event) has E as a prev_state_event, so walking back from E
+        # eventually reaches A and then E again.
+        self.get_success(
+            self.store.db_pool.simple_insert(
+                table="msc4242_state_dag_edges",
+                values={
+                    "room_id": self.room_id,
+                    "event_id": self.graph_events["A"].event_id,
+                    "prev_state_event_id": self.graph_events["E"].event_id,
+                },
+                desc="insert_state_dag_cycle",
+            )
+        )
+
+        # Same as the acyclic walk from E, with E itself now reachable via A at the end. Each
+        # event appears exactly once: the CTE groups by event ID and keeps the fewest hops.
+        self.assertEquals(
+            self._get_missing_events(latest=["E"], earliest=[], limit=100),
+            ["D", "T", "W", "C", "R", "B", "A", "E"],
+        )
+
+
+@attr.s(auto_attribs=True)
+class FakeEvent:
+    event_id: str
+    room_id: str
+    auth_events: list[str]
+
+    type = "foo"
+    state_key = "foo"
+
+    internal_metadata = EventInternalMetadata({})
+
+    def auth_event_ids(self) -> list[str]:
+        return self.auth_events
+
+    def is_state(self) -> bool:
+        return True
+
+
+def walk_state_dag(
+    graph: dict[str, list[str]],
+    graph_events: dict[str, MSC4242Event],
+    latest: list[str],
+    earliest: list[str],
+    limit: int,
+) -> list[str]:
+    """Work out what `get_missing_events_state_dag` should return, from the MSC4242 rules.
+
+    Walks back from `latest` via prev_state_events, then orders the events found by how many
+    hops they are from `latest`, breaking ties on the real event ID. An `earliest` event is
+    never returned and is never walked through, though its predecessors are still returned if
+    some other path reaches them.
+
+    Takes the graph and events as `build_state_dag` returns them, in terms of fake event IDs,
+    and returns the fake event IDs which should come back, in order. Ties break on the real
+    event ID rather than the fake one because the create event is the one event whose real ID
+    does not start with its fake ID.
+    """
+    hops: dict[str, int] = {}
+    # An event `limit` hops away can only be reached by returning an event at every hop
+    # before it, so a walk deeper than `limit` cannot contribute to the response.
+    frontier = sorted(set(latest) - set(earliest))
+    for hop in range(1, limit + 1):
+        next_frontier = set()
+        for fake_event_id in frontier:
+            for prev_fake_event_id in graph[fake_event_id]:
+                if prev_fake_event_id in earliest or prev_fake_event_id in hops:
+                    continue
+                # The first time we see an event is by definition its fewest hops.
+                hops[prev_fake_event_id] = hop
+                next_frontier.add(prev_fake_event_id)
+        frontier = sorted(next_frontier)
+    return sorted(
+        hops,
+        key=lambda fake: (hops[fake], graph_events[fake].event_id),
+    )[:limit]
+
+
+def build_state_dag(
+    creator: str, graph: dict[str, list[str]]
+) -> tuple[str, dict[str, MSC4242Event]]:
+    """Build an MSC4242 state DAG.
+
+    Args:
+        creator: The user ID creating the graph. Should be unique per-test to ensure room IDs change between tests.
+        graph: A map of fake event ID e.g. "B" to a list of prev_state_events e.g. ["A"]. Graphs must
+        be created in causal order (earliest events first). The first entry is assumed to be the
+        create event, so it must have no prev_state_events; every later entry must have at least one.
+    Returns:
+        A tuple of the room ID and a map from fake event ID e.g. "B" to real event which you can use .event_id
+        to extract the real event ID. Guarantees that the real event IDs start with the fake event ID e.g.
+        the real event for "B" is guarantees to start "$B...." which makes sorting tests much easier to reason about.
+        The create event is the exception: its ID is fixed by the room ID, so it does not start with its
+        fake event ID.
+    """
+    graph_events: dict[str, MSC4242Event] = {}  # graph ID => built event
+    create_event = make_test_event(
+        {
+            "type": EventTypes.Create,
+            "state_key": "",
+            "content": {
+                "room_version": RoomVersions.MSC4242v12.identifier,
+            },
+            "sender": creator,
+            "origin_server_ts": 1,
+        },
+        room_version=RoomVersions.MSC4242v12,
+    )
+    # Narrow to an MSC4242 event, so that `prev_state_events` can be used.
+    assert supports_msc4242_state_dag(create_event)
+    room_id = create_event.room_id
+    entropy = 1
+    for index, graph_event_id in enumerate(graph):
+        if index == 0:
+            # The first entry is the create event, which roots the state DAG.
+            assert len(graph[graph_event_id]) == 0, (
+                f"the first graph event {graph_event_id} is the create event, so it cannot "
+                "have any prev_state_events"
+            )
+            graph_events[graph_event_id] = create_event
+            continue
+        assert len(graph[graph_event_id]) > 0, (
+            f"graph event {graph_event_id} has no prev_state_events, but only the create event "
+            "(the first entry) may be missing them"
+        )
+        # Map previous event IDs to real event IDs. Requires us to build events in causal order.
+        prev_state_event_ids = [
+            graph_events[prev_graph_event_id].event_id
+            for prev_graph_event_id in graph[graph_event_id]
+        ]
+        # Event IDs are hashes of the event, so we cannot choose them directly. Instead, keep
+        # rebuilding the event with a different `origin_server_ts` until the hash happens to
+        # start with the fake event ID (e.g. "B" produces "$B..."). Ordering in the state DAG
+        # breaks ties lexicographically on the real event ID, so having the real IDs sort in
+        # the same order as the fake names is what makes the expectations in these tests
+        # readable.
+        while graph_event_id not in graph_events:
+            graph_event = make_test_event(
+                {
+                    "type": "foo",
+                    # All the fake events share a `type`, so the `state_key` is what makes
+                    # each one a distinct piece of state.
+                    "state_key": graph_event_id,
+                    "content": {},
+                    "sender": creator,
+                    "origin_server_ts": 1 + entropy,
+                    "prev_state_events": prev_state_event_ids,
+                    # Nothing in these tests looks at the message DAG, so just mirror the
+                    # state DAG here.
+                    "prev_events": prev_state_event_ids,
+                    "room_id": room_id,
+                },
+                room_version=RoomVersions.MSC4242v12,
+            )
+            assert supports_msc4242_state_dag(graph_event)
+            if not graph_event.event_id[1:].startswith(graph_event_id):
+                entropy += 1
+                continue
+            graph_events[graph_event_id] = graph_event
+    return (room_id, graph_events)
