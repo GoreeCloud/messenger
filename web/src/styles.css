@@ -1,0 +1,91 @@
+/* GC UI alpha semantic roles and Iris accent values, from GoreeCloud/gc-ui tokens/gc.tokens.json.
+   This is a first-party consumer adapter, not a competing design authority. */
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark;--canvas:#0D121D;--surface:#171D2A;--tonal:#252D3D;--text:#F2F4FB;--soft:#CED5E5;--outline:#505B70;--brand:#BFB8FF;--on-brand:#272057;--brand-container:#413974;--ring:#BFCBFF}
+*{box-sizing:border-box}
+body{margin:0;background:var(--canvas);color:var(--text);font-size:16px;line-height:1.55}
+button,input{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.48}
+button:focus-visible,input:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
+h1,h2,h3,p{margin-top:0}
+h1{font-size:clamp(2.75rem,4.5vw,4.375rem);line-height:1.1;letter-spacing:-.06em;font-weight:750}
+h2{font-size:1.55rem;line-height:1.2;letter-spacing:-.03em}
+h3{font-size:1.1rem}
+p{color:var(--soft)}
+a{color:var(--brand)}
+input{width:100%;border:1px solid var(--outline);border-radius:12px;background:#101723;color:var(--text);padding:13px 14px;min-height:44px}
+input::placeholder{color:#9CA8BC}
+label{display:block;font-size:.82rem;font-weight:650;margin-bottom:7px}
+button.primary,.small-primary{border:0;border-radius:12px;color:var(--on-brand);background:var(--brand);font-weight:750;min-height:44px;padding:10px 22px}
+button.primary:hover,.small-primary:hover{filter:brightness(1.07)}
+button.quiet{background:transparent;border:0;color:var(--soft);padding:9px 14px;border-radius:12px}
+button.quiet:hover{background:var(--tonal)}
+button.bordered{border:1px solid var(--outline);width:100%}
+.eyebrow{font-size:.69rem;letter-spacing:.18em;font-weight:850;color:var(--brand)}
+.muted{color:var(--soft)}
+.app-shell{min-height:100dvh;display:flex;flex-direction:column}
+.topbar{height:88px;display:flex;align-items:center;justify-content:space-between;padding:0 max(24px,5vw);border-bottom:1px solid #2a3446;background:#121925}
+.identity{display:flex;align-items:center;gap:14px;line-height:1.15}
+.brand-mark{display:grid;place-items:center;width:46px;height:46px;border:1px solid #7871bc;background:linear-gradient(145deg,#413974,#23244f);color:#eeeaff;font-size:23px;border-radius:16px;font-weight:800}
+.identity strong{font-size:1.1rem;letter-spacing:-.02em}
+.identity strong span{font-weight:450}
+.identity small{display:block;color:var(--soft);font-size:.73rem;margin-top:6px}
+.header-actions{display:flex;align-items:center;gap:18px}
+.preview-pill{border:1px solid #4b456d;background:#302949;padding:7px 12px;color:#e6e1ff;border-radius:999px;font-size:.76rem;font-weight:650}
+.welcome-wrap{width:min(1250px,100%);margin:auto;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(340px,.8fr);gap:7vw;align-items:center;padding:72px 30px}
+.hero{padding:24px 0}
+.hero h1{margin:22px 0 28px}
+.hero h1 em{font-style:normal;color:var(--brand)}
+.hero>p{max-width:535px;font-size:1.12rem}
+.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:65px}
+.feature-grid>div{border-top:1px solid #465168;padding-top:17px}
+.feature-grid span{display:block;color:var(--brand);font-size:1.55rem}
+.feature-grid strong{display:block;margin:10px 0 5px;font-size:.91rem}
+.feature-grid small{display:block;color:var(--soft);line-height:1.45}
+.login-card{background:var(--surface);border:1px solid #3e4758;border-radius:26px;padding:40px;box-shadow:0 24px 66px rgba(0,0,0,.16)}
+.login-card h2{font-size:2rem;margin:14px 0 9px}
+.login-card p{font-size:.91rem}
+.login-card form{display:grid;margin-top:24px}
+.login-card form input{margin-bottom:16px}
+.login-card button.primary{margin-top:8px;width:100%;min-height:52px}
+.login-card .security-note{border-top:1px solid #3c465a;padding-top:20px;margin:24px 0 0;font-size:.79rem}
+.security-note span{color:var(--brand)}
+.workspace{flex:1;display:grid;grid-template-columns:320px minmax(340px,1fr) 294px;min-height:0}
+.rooms-panel,.details-panel{background:var(--surface);padding:30px 20px;display:flex;flex-direction:column}
+.rooms-panel{border-right:1px solid #344052}
+.details-panel{border-left:1px solid #344052}
+.panel-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}
+.panel-title h2{margin:6px 0 0;font-size:1.6rem}
+.count{background:var(--tonal);padding:4px 11px;border-radius:999px}
+.create-form{margin-bottom:27px}
+.inline-form{display:flex;gap:8px}.small-primary{font-size:24px;width:46px;padding:0}
+.room-list{overflow:auto;flex:1;min-height:150px}
+.room-item{display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border:1px solid transparent;color:var(--text);width:100%;padding:12px;border-radius:16px;margin-bottom:5px}
+.room-item:hover{background:var(--tonal)}.room-item.selected{background:var(--brand-container);border-color:#655cb0}
+.avatar{display:grid;place-items:center;flex:0 0 44px;height:44px;border-radius:16px;background:#343e56;color:#e4e0ff;font-weight:800}
+.room-copy{min-width:0}.room-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.room-copy small{display:block;color:var(--soft);font-size:.73rem}
+.account-foot{margin-top:auto;border-top:1px solid #364055;display:flex;gap:10px;align-items:center;padding-top:24px;font-size:.82rem}
+.account-foot small{display:block;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--soft)}
+.status-dot{height:10px;width:10px;border-radius:50%;background:#95E0BB}
+.conversation{display:flex;flex-direction:column;min-width:0;min-height:calc(100dvh - 130px)}
+.conversation-top{border-bottom:1px solid #344052;padding:24px 32px;display:flex;align-items:center;justify-content:space-between;gap:15px}
+.conversation-top h2{margin:0 0 5px}.conversation-top p{margin:0;font-size:.76rem}.room-indicator{font-size:.76rem;white-space:nowrap;color:var(--brand)}
+.messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:18px;padding:32px}
+.message{max-width:min(75%,640px);background:var(--surface);border:1px solid #424b60;border-radius:18px 18px 18px 6px;padding:14px 18px}
+.message.mine{align-self:flex-end;background:var(--brand-container);border-color:#5e559e;border-radius:18px 18px 6px 18px}
+.message small{font-size:.7rem;color:var(--soft);overflow-wrap:anywhere}.message p{color:var(--text);margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.composer{display:flex;gap:12px;padding:22px 30px;border-top:1px solid #344052}.composer button{min-width:90px}
+.empty-chat{margin:auto;text-align:center;max-width:370px;padding:40px 20px}.empty-chat span{display:block;color:var(--brand);font-size:60px;margin-bottom:12px}.empty-chat h2,.empty-chat h3{margin-bottom:8px}
+.details-panel h3{margin:12px 0 25px}
+.detail-box{display:grid;gap:8px;background:var(--tonal);border:1px solid #505b70;border-radius:18px;padding:18px}.detail-box strong{font-size:.9rem}.detail-box small{color:var(--soft);line-height:1.5}
+.detail-label{margin:26px 0 8px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+.room-id{font-size:.75rem;overflow-wrap:anywhere;color:var(--soft)}
+.invite-form{margin-top:30px}.invite-form button{margin-top:12px}
+.toast{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);max-width:min(660px,90vw);padding:14px 40px 14px 18px;background:#2c3d43;border:1px solid #95e0bb;color:#f2f4fb;border-radius:12px;box-shadow:0 20px 56px #0008;z-index:100}
+.toast.error{background:#4F1410;border-color:#FFB4AB}
+.close{position:absolute;right:6px;top:5px;color:inherit;background:transparent;border:0;font-size:26px}
+.footer-note{text-align:center;color:#9CA8BC;font-size:.68rem;letter-spacing:.02em;padding:10px;background:#111824}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:1180px){.workspace{grid-template-columns:270px minmax(330px,1fr)}.details-panel{display:none}}
+@media(max-width:850px){.welcome-wrap{grid-template-columns:1fr;gap:20px;padding:42px 22px}.hero{padding:0}.feature-grid{margin-top:36px}.login-card{max-width:540px}.workspace{grid-template-columns:235px minmax(0,1fr)}.topbar{padding:0 20px}.conversation-top{padding:19px}.messages{padding:19px}.composer{padding:16px}}
+@media(max-width:620px){.topbar{height:74px}.identity small{display:none}.identity strong{font-size:.93rem}.brand-mark{width:38px;height:38px}.preview-pill{display:none}.feature-grid{gap:10px}.workspace{display:flex;flex-direction:column}.rooms-panel{border-right:0;border-bottom:1px solid #344052;padding:17px}.room-list{display:flex;gap:8px;min-height:unset;overflow:auto}.room-item{min-width:180px;max-width:220px}.account-foot{display:none}.panel-title{margin-bottom:12px}.create-form{margin-bottom:14px}.conversation{min-height:57dvh}.conversation-top{padding:16px}.conversation-top p{font-size:.69rem}.room-indicator{display:none}.messages{min-height:220px}.login-card{padding:26px}.hero h1{font-size:clamp(2.4rem,11vw,3.4rem)}}
+@media(prefers-reduced-motion:no-preference){button{transition:background-color 160ms ease,transform 160ms ease}button:hover:not(:disabled){transform:translateY(-1px)}}
+@media(prefers-contrast:more){.login-card,.message,.detail-box,.room-item.selected{border-width:2px}}

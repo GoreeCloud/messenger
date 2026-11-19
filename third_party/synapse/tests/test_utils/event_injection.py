@@ -1,0 +1,207 @@
+#
+# This file is licensed under the Affero General Public License (AGPL) version 3.
+#
+# Copyright 2020 The Matrix.org Foundation C.I.C
+# Copyright (C) 2023 New Vector, Ltd
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# See the GNU Affero General Public License for more details:
+# <https://www.gnu.org/licenses/agpl-3.0.html>.
+#
+# Originally licensed under the Apache License, Version 2.0:
+# <http://www.apache.org/licenses/LICENSE-2.0>.
+#
+# [This file includes modifications made by New Vector Limited]
+#
+#
+from typing import Any, Mapping
+
+import synapse.server
+from synapse.api.constants import EventTypes
+from synapse.api.room_versions import KNOWN_ROOM_VERSIONS
+from synapse.events import EventBase
+from synapse.events.snapshot import EventContext
+
+"""
+Utility functions for poking events into the storage of the server under test.
+"""
+
+
+async def inject_member_event(
+    hs: synapse.server.HomeServer,
+    room_id: str,
+    sender: str,
+    membership: str,
+    target: str | None = None,
+    extra_content: dict | None = None,
+    **kwargs: Any,
+) -> EventBase:
+    """Inject a membership event into a room."""
+    if target is None:
+        target = sender
+
+    content = {"membership": membership}
+    if extra_content:
+        content.update(extra_content)
+
+    return await inject_event(
+        hs,
+        room_id=room_id,
+        type=EventTypes.Member,
+        sender=sender,
+        state_key=target,
+        content=content,
+        **kwargs,
+    )
+
+
+async def inject_event(
+    hs: synapse.server.HomeServer,
+    room_version: str | None = None,
+    prev_event_ids: list[str] | None = None,
+    *,
+    internal_metadata: Mapping[str, Any] | None = None,
+    **kwargs: Any,
+) -> EventBase:
+    """Inject a generic event into a room
+
+    Args:
+        hs: the homeserver under test
+        room_version: the version of the room we're inserting into.
+            if not specified, will be looked up
+        prev_event_ids: prev_events for the event. If not specified, will be looked up
+        internal_metadata: Dict representing the event's internal metadata; see `EventBase.internal_metadata`
+        kwargs: fields for the event to be created
+    """
+    event, context = await create_event(
+        hs, room_version, prev_event_ids, internal_metadata=internal_metadata, **kwargs
+    )
+
+    persistence = hs.get_storage_controllers().persistence
+    assert persistence is not None
+
+    await persistence.persist_event(event, context)
+
+    return event
+
+
+async def create_event(
+    hs: synapse.server.HomeServer,
+    room_version: str | None = None,
+    prev_event_ids: list[str] | None = None,
+    *,
+    internal_metadata: Mapping[str, Any] | None = None,
+    **kwargs: Any,
+) -> tuple[EventBase, EventContext]:
+    internal_metadata = internal_metadata or {}
+    if room_version is None:
+        room_version = await hs.get_datastores().main.get_room_version_id(
+            kwargs["room_id"]
+        )
+
+    builder = hs.get_event_builder_factory().for_room_version(
+        KNOWN_ROOM_VERSIONS[room_version], kwargs
+    )
+    (
+        event,
+        unpersisted_context,
+    ) = await hs.get_event_creation_handler().create_new_client_event(
+        builder, prev_event_ids=prev_event_ids
+    )
+
+    # Copy over writable internal_metadata, if set
+    if internal_metadata:
+        for key, value in internal_metadata.items():
+            # Note: this calls the relevant `#[setter]` function in the (Rust) event class'
+            # internal metadata struct.
+            # Will reject unknown keys with exceptions.
+            # This is desirable for our test suite anyway.
+            setattr(event.internal_metadata, key, value)
+
+    context = await unpersisted_context.persist(event)
+
+    return event, context
+
+
+async def persist_message_and_state_event_in_one_batch(
+    hs: synapse.server.HomeServer,
+    room_id: str,
+    sender: str,
+) -> tuple[EventBase, EventBase]:
+    """Persist a message and a state event in a *single* persist batch (one
+    `_persist_events_and_state_updates` call), with the message first.
+
+    The message's stream ordering is then the batch minimum, so the state
+    event's `current_state_delta_stream` row (which is stamped with the batch
+    minimum, see `_update_current_state_txn`) sits *before* the state event's
+    own position. That is the shape behind
+    https://github.com/element-hq/synapse/issues/18793.
+
+    Both events are created off the same forward extremities, i.e. as
+    siblings, which is how two events sent concurrently end up in one batch.
+
+    Returns:
+        The persisted (message, state event) pair.
+    """
+    store = hs.get_datastores().main
+    persistence = hs.get_storage_controllers().persistence
+    assert persistence is not None
+    prev_event_ids = await store.get_prev_events_for_room(room_id)
+
+    message, message_ctx = await create_event(
+        hs,
+        room_id=room_id,
+        type=EventTypes.Message,
+        sender=sender,
+        content={"msgtype": "m.text", "body": "batched message"},
+        prev_event_ids=prev_event_ids,
+    )
+    state_event, state_ctx = await create_event(
+        hs,
+        room_id=room_id,
+        type="m.call.member",
+        state_key=sender,
+        sender=sender,
+        content={"memberships": [{"device_id": "BATCHED"}]},
+        prev_event_ids=prev_event_ids,
+    )
+
+    await persistence.persist_events([(message, message_ctx), (state_event, state_ctx)])
+    return message, state_event
+
+
+async def mark_event_as_partial_state(
+    hs: synapse.server.HomeServer,
+    event_id: str,
+    room_id: str,
+) -> None:
+    """
+    (Falsely) mark an event as having partial state.
+
+    Naughty, but occasionally useful when checking that partial state doesn't
+    block something from happening.
+
+    If the event already has partial state, this insert will fail (event_id is unique
+    in this table).
+    """
+    store = hs.get_datastores().main
+    # Use the store helper to insert into the database so the caches are busted
+    await store.store_partial_state_room(
+        room_id=room_id,
+        servers={hs.hostname},
+        device_lists_stream_id=0,
+        joined_via=hs.hostname,
+    )
+
+    # FIXME: Bust the cache
+    await store.db_pool.simple_insert(
+        table="partial_state_events",
+        values={
+            "room_id": room_id,
+            "event_id": event_id,
+        },
+    )
