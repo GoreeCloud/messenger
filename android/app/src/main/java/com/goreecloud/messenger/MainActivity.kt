@@ -183,11 +183,14 @@ private fun MessengerScreen() {
                     Button(enabled = !busy && !savedSession && !orphanedDevice &&
                         username.isNotBlank() && password.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(), onClick = {
+                            // Clear the Compose password field immediately, including
+                            // on authentication failures, rather than retain it in UI state.
+                            val submittedPassword = password
+                            password = ""
                             busy = true; error = ""; notice = ""
                             scope.launch {
                                 try {
-                                    rooms = engine.login(server, username, password) { refresh() }
-                                    password = ""
+                                    rooms = engine.login(server, username, submittedPassword) { refresh() }
                                     connected = true
                                     savedSession = true
                                     orphanedDevice = false
