@@ -15,6 +15,7 @@ GoreeCloud Messenger is an open-source Matrix-compatible messaging project with 
 | Invite Matrix users | Yes | Yes, encrypted rooms |
 | Send messages | Only in encrypted rooms | Only in encrypted rooms, via Matrix Rust SDK |
 | Emoji reactions | Encrypted room only | Encrypted room only, pending interoperability |
+| Replies to existing messages | Encrypted room only | Encrypted room only, pending interoperability |
 | Native device verification and recovery | Not yet | Not yet |
 | Voice/video, media, push, moderation | Planned | Planned |
 

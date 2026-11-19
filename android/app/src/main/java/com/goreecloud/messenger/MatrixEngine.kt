@@ -234,6 +234,31 @@ class MatrixEngine(context: Context) : AutoCloseable {
         try { activeTimeline.send(content) } finally { content.close() }
     }
 
+    suspend fun sendEncryptedReply(roomId: String, eventId: String, body: String) =
+        withContext(Dispatchers.IO) {
+            val active = requireNotNull(client) { "Sign in first." }
+            val room = requireNotNull(active.getRoom(roomId)) { "Room unavailable." }
+            // The SDK's encrypted reply mechanism constructs the Matrix
+            // relation; never send a custom unencrypted HTTP event.
+            val isEncrypted = room.isEncrypted()
+            val isJoined = room.membership() == Membership.JOINED
+            val activeTimeline = synchronized(timelineLock) {
+                require(selectedRoomId == roomId) { "Select the room again." }
+                requireNotNull(timeline) { "Room timeline unavailable." }
+            }
+            val safeBody = ReplyPolicy.requireEncryptedReply(
+                roomId, roomId, eventId, body, isEncrypted, isJoined,
+            )
+            val content = messageEventContentNew(
+                MessageType.Text(TextMessageContent(safeBody, null))
+            )
+            try {
+                activeTimeline.sendReply(content, eventId).close()
+            } finally {
+                content.close()
+            }
+        }
+
     suspend fun toggleReaction(roomId: String, eventId: String, emoji: String): Boolean =
         withContext(Dispatchers.IO) {
             val room = requireNotNull(client?.getRoom(roomId)) { "Room unavailable." }

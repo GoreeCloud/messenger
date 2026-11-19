@@ -21,7 +21,7 @@ This is a priority plan, not a release claim.
 
 ## Messaging features
 - [ ] Media, voice notes, encrypted attachments, message editing and threads.
-- [x] Web emoji reaction and reply source; Android now has SDK-backed encrypted-room emoji reactions.
+- [x] Web emoji reaction and reply source; Android has SDK-backed encrypted-room emoji reactions and replies.
 - [ ] Test encrypted reactions across two real devices against a trusted test Matrix homeserver.
 - [ ] Encrypted groups, roles and moderation.
 - [ ] Voice/video using reviewed MatrixRTC, TURN and LiveKit.
