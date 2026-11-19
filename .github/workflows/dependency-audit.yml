@@ -1,0 +1,48 @@
+name: Messenger dependency audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monday, midday UTC. This is advisory; production builds still need review.
+    - cron: "23 13 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  browser-advisories:
+    name: browser-advisories
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked browser packages
+        working-directory: web
+        run: npm ci
+      - name: Audit production dependency advisories
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=high
+      - name: Generate web CycloneDX software bill of materials
+        working-directory: web
+        run: npm sbom --sbom-format=cyclonedx > web-cyclonedx-sbom.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: messenger-web-sbom
+          path: web/web-cyclonedx-sbom.json
+          retention-days: 7
+          if-no-files-found: error
+
+  upstream-provenance:
+    name: upstream-provenance
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify vendored Synapse tree and privacy defaults
+        run: |
+          python3 -m unittest discover -s deploy/tests -v
+          python3 deploy/verify_source.py
+          bash deploy/build_source.sh
