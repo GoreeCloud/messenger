@@ -1,6 +1,6 @@
 # Messenger technical architecture
 
-Matrix Client-Server APIs and federation form the open messaging protocol. The web app uses matrix-js-sdk 45.1.0 with Matrix Rust crypto via WebAssembly. The Android native prototype uses a narrow HTTPS API only for account login, joined-room discovery and read-only plaintext-room viewing; it will switch to the Matrix Rust SDK Kotlin bindings before encrypted send/receive can be offered.
+Matrix Client-Server APIs and federation form the open messaging protocol. The web app uses matrix-js-sdk 45.1.0 with Matrix Rust crypto via WebAssembly. The native Android app uses the pinned Matrix Rust SDK 26.11.17 Kotlin bindings for authentication, room synchronization, encrypted-room send/receive source, and encrypted SQLite crypto storage. Android wraps its random SQLite key and encrypted session file with Android Keystore. Both clients still require trusted cross-device verification and actual two-user interoperability tests.
 
 ~~~text
 GoreeCloud web (React + matrix-js-sdk/Rust WASM crypto)
@@ -12,8 +12,9 @@ GoreeCloud web (React + matrix-js-sdk/Rust WASM crypto)
                        |
         persistence, events, federation
                        ^
-                       | HTTPS (read-only preview)
+                       | HTTPS (native Rust SDK + crypto)
 GoreeCloud Android (Kotlin/Compose)
+    | encrypted app-private SQLite + Android Keystore
 ~~~
 
 The server may observe metadata including accounts, membership, IP addresses, timing and federation routing. Correct client E2EE is necessary to restrict message plaintext, but it does not hide all metadata. This project does not modify the upstream Matrix cryptographic protocol.

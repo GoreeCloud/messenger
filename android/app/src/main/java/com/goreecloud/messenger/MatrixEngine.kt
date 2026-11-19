@@ -1,7 +1,10 @@
 package com.goreecloud.messenger
 
+import android.content.Context
+
 import org.matrix.rustcomponents.sdk.Client
 import org.matrix.rustcomponents.sdk.ClientBuilder
+import org.matrix.rustcomponents.sdk.SqliteStoreBuilder
 import org.matrix.rustcomponents.sdk.CreateRoomParameters
 import org.matrix.rustcomponents.sdk.Membership
 import org.matrix.rustcomponents.sdk.MessageType
@@ -26,13 +29,14 @@ data class Conversation(val id: String, val name: String, val encrypted: Boolean
 data class TimelineEntry(val id: String, val sender: String, val body: String, val own: Boolean)
 
 /**
- * Uses Matrix Rust SDK directly for authentication, sync, timelines and encryption.
+ * Native Matrix Rust SDK client with Android Keystore-encrypted SQLite storage.
  *
- * Current policy is intentionally in-memory only. The SDK's E2EE implementation
- * operates during this one process lifetime, but device keys and room keys are
- * NOT backed up/restored after process death. No device trust claim is made.
+ * Device keys persist on this Android installation but CANNOT yet be recovered
+ * on a replacement device. Neither trusted cross-signing nor key backup exists.
+ * Log out erases the local encrypted store and its Keystore wrapping key.
  */
-class MatrixEngine : AutoCloseable {
+class MatrixEngine(context: Context) : AutoCloseable {
+    private val vault = AndroidSessionVault(context.applicationContext)
     private var client: Client? = null
     private var syncTask: TaskHandle? = null
     private var timelineTask: TaskHandle? = null
@@ -42,25 +46,47 @@ class MatrixEngine : AutoCloseable {
     private var selectedRoomId: String? = null
     private val timelineItems = mutableListOf<TimelineItem>()
 
+    fun hasStoredSession() = vault.hasSession()
+
+    private suspend fun buildClient(server: String): Client {
+        val key = vault.storeKey()
+        try {
+            return ClientBuilder()
+                .homeserverUrl(HomeserverPolicy.requireHttpsOrigin(server))
+                .disableWellKnownLookup(true)
+                .sessionPaths(vault.dataPath, vault.cachePath)
+                .sqliteStore(SqliteStoreBuilder(vault.dataPath, vault.cachePath).key(key))
+                .build()
+        } finally {
+            // The Rust FFI copies the key; do not keep a second Java byte array.
+            key.fill(0)
+        }
+    }
+
+    private suspend fun startSync(built: Client, updated: () -> Unit): List<Conversation> {
+        built.syncOnceV2(SyncSettingsV2(timeoutMs = 0UL, fullState = true))
+        client = built
+        syncTask = built.syncV2(SyncSettingsV2(), object : SyncListenerV2 {
+            override fun onUpdate(response: SyncResponseV2) = updated()
+        })
+        return rooms()
+    }
+
     val userId: String get() = client?.session()?.userId ?: ""
 
     suspend fun login(server: String, username: String, password: String, updated: () -> Unit): List<Conversation> =
         withContext(Dispatchers.IO) {
             require(client == null) { "Already connected." }
-            val homeserver = HomeserverPolicy.requireHttpsOrigin(server)
-            val built = ClientBuilder()
-                .homeserverUrl(homeserver)
-                .disableWellKnownLookup(true)
-                .inMemoryStore()
-                .build()
+            require(!vault.hasSession()) {
+                "This installation already holds another session. Restore it or explicitly forget this device."
+            }
+            val built = buildClient(server)
             try {
                 built.login(username.trim(), password, "GoreeCloud Messenger Android", null)
-                built.syncOnceV2(SyncSettingsV2(timeoutMs = 0UL, fullState = true))
-                client = built
-                syncTask = built.syncV2(SyncSettingsV2(), object : SyncListenerV2 {
-                    override fun onUpdate(response: SyncResponseV2) = updated()
-                })
-                rooms()
+                // Persist the authenticated device before starting sync, so
+                // process death cannot silently replace the signing device.
+                vault.saveSession(built.session())
+                startSync(built, updated)
             } catch (failure: Exception) {
                 syncTask?.cancel()
                 syncTask?.close()
@@ -70,6 +96,29 @@ class MatrixEngine : AutoCloseable {
                 throw failure
             }
         }
+
+    suspend fun restore(updated: () -> Unit): List<Conversation> = withContext(Dispatchers.IO) {
+        require(client == null) { "Already connected." }
+        val saved = requireNotNull(vault.readSession()) { "No encrypted local session." }
+        val built = buildClient(saved.homeserverUrl)
+        try {
+            built.restoreSession(saved)
+            startSync(built, updated)
+        } catch (failure: Exception) {
+            syncTask?.cancel()
+            syncTask?.close()
+            syncTask = null
+            client = null
+            built.close()
+            // Never erase a recoverable crypto database on transient failures.
+            throw failure
+        }
+    }
+
+    fun forgetStoredSession() {
+        require(client == null) { "Sign out before deleting a connected session." }
+        vault.forget()
+    }
 
     suspend fun rooms(): List<Conversation> = withContext(Dispatchers.IO) {
         val active = client ?: return@withContext emptyList()
@@ -172,8 +221,14 @@ class MatrixEngine : AutoCloseable {
 
     suspend fun logout() = withContext(Dispatchers.IO) {
         val active = client
-        try { if (active != null) active.logout() } catch (_: Exception) { /* local session still clears */ }
-        finally { close() }
+        try { if (active != null) active.logout() }
+        catch (_: Exception) { /* Server-side revocation may be unavailable offline. */ }
+        finally {
+            close()
+            // Explicit sign-out deletes device keys. A device without trusted
+            // server-side key backup may lose old encrypted history forever.
+            vault.forget()
+        }
     }
 
     override fun close() {

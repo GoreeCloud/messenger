@@ -8,7 +8,7 @@ GoreeCloud Messenger is an open-source Matrix-compatible messaging project with 
 
 | Capability | Web | Android |
 | --- | --- | --- |
-| Existing Matrix account login | Yes, memory-only credentials | Yes, memory-only credentials |
+| Existing Matrix account login | Yes, memory-only tokens | Yes, Keystore-wrapped local session |
 | Joined room list | Yes | Yes |
 | Message timeline | Matrix SDK, including E2EE when crypto works | Matrix Rust SDK timeline, including encrypted-room events |
 | Create private encrypted rooms | Yes | Yes, unverified E2EE runtime preview |
@@ -17,7 +17,7 @@ GoreeCloud Messenger is an open-source Matrix-compatible messaging project with 
 | Native device verification and recovery | Not yet | Not yet |
 | Voice/video, media, push, moderation | Planned | Planned |
 
-No Signal-equivalent security claim is made. Web crypto depends on the upstream Matrix Rust-backed SDK, and long-term key recovery, cross-signing and device verification are not implemented. Android now uses upstream Matrix Rust SDK crypto for room timelines and encrypted send/receive, but no two-device exchange, device verification or key recovery has been accepted. Both clients keep access tokens in memory, not on disk; the web crypto store is memory-only and loses keys on refresh.
+No Signal-equivalent security claim is made. Web crypto depends on the upstream Matrix Rust-backed SDK, and long-term key recovery, cross-signing and device verification are not implemented. Android now uses upstream Matrix Rust SDK crypto for room timelines and encrypted send/receive, but no two-device exchange, device verification or key recovery has been accepted. The web keeps tokens and crypto state in memory by default. Android stores its Matrix access token only inside a Keystore-wrapped local session and encrypted SQLite device database, with no OS cloud backup; this is NOT cross-device key recovery.
 
 ## Repository
 
@@ -50,7 +50,7 @@ cd android
 ./gradlew :app:assembleDebug
 ~~~
 
-The debug APK is generated at android/app/build/outputs/apk/debug/app-debug.apk when the build succeeds. It includes large Matrix Rust native binaries; physical device testing, secret recovery, signed distribution, and actual E2EE round trips remain outstanding.
+The debug APK is generated at android/app/build/outputs/apk/debug/app-debug.apk when the build succeeds. It includes large Matrix Rust native binaries; four synthetic Keystore vault checks have passed on a connected Android handset, but full real-homeserver login/restore, signed distribution, secret recovery and actual two-device E2EE round trips remain outstanding.
 
 Passing GitHub Actions workflow runs also retain **development-only** web bundles and
 Android debug APKs for seven days as CI artifacts. These are unsigned-for-release
@@ -60,7 +60,7 @@ preview outputs, not trusted production distributions.
 
 GoreeCloud UI provides the verified current alpha semantic colors, spacing and typography adaptation. GoreeShield owns consent, privacy, retention and minimization; Wardveil owns defensive security; GoreeCloud Mesh owns future opt-in interoperability; GoreeCloud Identity remains a future authenticated integration and is not falsely claimed to be running.
 
-Read [architecture](docs/ARCHITECTURE.md), [security limitations](docs/SECURITY.md), [roadmap](docs/ROADMAP.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
+Read [Android encrypted device storage](docs/ANDROID_LOCAL_STORAGE.md), [architecture](docs/ARCHITECTURE.md), [security limitations](docs/SECURITY.md), [roadmap](docs/ROADMAP.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 **Licensing:** Original first-party code is Apache-2.0. Vendored Synapse code remains AGPL-3.0-or-later and retains its own license and notices. Dependencies keep their respective upstream licenses. This repository has no verified production deployment, public service endpoint, Stable release, signed Android package or configured ongoing automation.
 
