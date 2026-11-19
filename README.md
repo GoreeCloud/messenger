@@ -57,6 +57,9 @@ The debug APK is generated at android/app/build/outputs/apk/debug/app-debug.apk 
 Passing GitHub Actions workflow runs also retain **development-only** web bundles and
 Android debug APKs for seven days as CI artifacts. These are unsigned-for-release
 preview outputs, not trusted production distributions.
+Preview archives include a per-file SHA-256 manifest verified by CI; see
+[preview artifact integrity](docs/ARTIFACT_INTEGRITY.md). Checksums are
+not signatures or independent proof of build security.
 
 ## Platform alignment
 
