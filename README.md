@@ -44,6 +44,10 @@ npm run dev
 ~~~
 
 Connect to a Matrix homeserver you control or one you trust, over HTTPS. For a local-only test homeserver, see [deploy/README.md](deploy/README.md). Do not use a production account with irreplaceable encrypted history for this preview.
+The pinned Synapse source build includes upstream Dockerfile network-execution
+risks. Read [source-build safety](docs/SOURCE_BUILD_SAFETY.md) before any
+operator-initiated build. The default source-build command remains a dry run,
+and no source image has been independently accepted or deployed.
 
 Android requires JDK 21, Android SDK 35+, and Gradle wrapper:
 
