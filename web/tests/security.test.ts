@@ -50,6 +50,12 @@ describe("Matrix encrypted message enforcement", () => {
   it("never returns arbitrary sensitive server errors to the UI", () => {
     expect(safeMessage(new Error("Bearer super-secret token 123"))).not.toContain("super-secret");
   });
+  it("reports only constant, sanitized local-vault errors", () => {
+    expect(safeMessage(new Error("This encrypted device is already open in another tab.")))
+      .toMatch(/already open/);
+    expect(safeMessage(new Error("Bad vault token=secret123")))
+      .not.toContain("secret123");
+  });
   it("rejects rooms missing a real client instance", async () => {
     const { client } = mockClient({ room: false });
     await expect(requireEncryptedRoom(client, "!missing:test")).rejects.toThrow();

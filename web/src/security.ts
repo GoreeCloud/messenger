@@ -55,8 +55,22 @@ export async function reactEncrypted(
 /** Log no passwords, access tokens, or raw server payloads into the user interface. */
 export function safeMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
-  if (message.startsWith("Sending is disabled") || message.startsWith("Cryptographic room") ||
-      message.startsWith("Messages must") || message.startsWith("Unsupported reaction") ||
-      message.startsWith("Cannot reply")) return message;
+  const safeMessages = new Set([
+    "Use a unique 20–1024 character encryption passphrase without control characters.",
+    "Persistent devices require a full Matrix ID (@user:server).",
+    "Secure browser cryptography is unavailable.",
+    "Local encrypted crypto storage requires IndexedDB enumeration and Web Locks.",
+    "Encrypted device database is missing. Existing device keys cannot be safely restored.",
+    "Unrecognized encrypted device data found. Login is blocked to protect existing keys.",
+    "Saved device metadata is corrupted.",
+    "Saved device metadata is invalid.",
+    "Web Locks API required for encrypted local device storage.",
+    "This encrypted device is already open in another tab.",
+    "The homeserver returned a different device identity.",
+    "Cannot persist an invalid Matrix device ID.",
+  ]);
+  if (safeMessages.has(message) || message.startsWith("Sending is disabled") ||
+      message.startsWith("Cryptographic room") || message.startsWith("Messages must") ||
+      message.startsWith("Unsupported reaction") || message.startsWith("Cannot reply")) return message;
   return "Operation failed. Check your connection, homeserver permissions and room state.";
 }

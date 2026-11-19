@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -42,7 +43,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun MessengerScreen() {
-    val engine = remember { MatrixEngine() }
+    val context = LocalContext.current
+    val engine = remember(context) { MatrixEngine(context.applicationContext) }
     DisposableEffect(engine) { onDispose { engine.close() } }
     val scope = rememberCoroutineScope()
 
@@ -50,6 +52,10 @@ private fun MessengerScreen() {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var connected by remember { mutableStateOf(false) }
+    var savedSession by remember(engine) { mutableStateOf(engine.hasStoredSession()) }
+    var orphanedDevice by remember(engine) { mutableStateOf(engine.hasOrphanedLocalData()) }
+    var confirmSignOut by remember { mutableStateOf(false) }
+    var confirmForget by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var rooms by remember { mutableStateOf<List<Conversation>>(emptyList()) }
     var selected by remember { mutableStateOf<Conversation?>(null) }
@@ -78,30 +84,101 @@ private fun MessengerScreen() {
         }
     }
 
+    suspend fun attemptRestore() {
+        busy = true; error = ""; notice = ""
+        try {
+            rooms = engine.restore { refresh() }
+            connected = true
+            savedSession = true
+            notice = "Restored your local encrypted device. Device identity and recovery remain unverified."
+        } catch (_: Exception) {
+            error = "Could not restore this encrypted device. Its local keys remain intact. Retry or explicitly erase this device's local history."
+        } finally { busy = false }
+    }
+
+    LaunchedEffect(engine) {
+        if (savedSession) attemptRestore()
+    }
+
+    if (confirmSignOut) AlertDialog(
+        onDismissRequest = { confirmSignOut = false },
+        title = { Text("Sign out and erase this device?") },
+        text = { Text("The encrypted local session and all local message keys will be deleted. Without a verified key backup, old encrypted history may be permanently unreadable. Server-side token revocation may fail offline.") },
+        confirmButton = {
+            TextButton(onClick = {
+                confirmSignOut = false
+                scope.launch {
+                    busy = true
+                    try {
+                        engine.logout()
+                        connected = false; savedSession = false; orphanedDevice = false
+                        selected = null; rooms = emptyList(); messages = emptyList()
+                        notice = "Local encrypted device removed. Key backup is not configured."
+                    } catch (_: Exception) { error = "Could not completely remove device data. Do not reuse this device until local storage is cleared." }
+                    finally { busy = false }
+                }
+            }) { Text("Erase local device") }
+        },
+        dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Keep device") } }
+    )
+
+    if (confirmForget) AlertDialog(
+        onDismissRequest = { confirmForget = false },
+        title = { Text("Permanently forget local device?") },
+        text = { Text("This irreversibly deletes the encrypted session, local database and Keystore key. Missing encrypted history cannot be recovered without an independently verified server-side backup.") },
+        confirmButton = {
+            TextButton(onClick = {
+                confirmForget = false
+                try {
+                    engine.forgetStoredSession()
+                    savedSession = false
+                    orphanedDevice = false
+                    error = ""
+                    notice = "Local encrypted device erased."
+                } catch (_: Exception) { error = "Could not fully erase device data." }
+            }) { Text("Forget local device") }
+        },
+        dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Cancel") } }
+    )
+
     Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("GoreeCloud Messenger", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text("Native Android · Matrix Rust SDK", style = MaterialTheme.typography.labelMedium, color = soft)
             }
-            if (connected) TextButton(enabled = !busy, onClick = {
-                connected = false; rooms = emptyList(); selected = null; messages = emptyList()
-                scope.launch { engine.logout() }
-            }) { Text("Sign out") }
+            if (connected) TextButton(enabled = !busy, onClick = { confirmSignOut = true }) {
+                Text("Sign out")
+            }
         }
         Spacer(Modifier.height(12.dp))
         if (!connected) {
             ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = surface)) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
                     Text("Connect to your homeserver", style = MaterialTheme.typography.headlineSmall)
-                    Text("Sign in to an existing Matrix account. This preview keeps keys in memory: encrypted history may become unreadable after a restart.", color = soft)
+                    Text("Sign in to an existing Matrix account. Device keys are encrypted using Android Keystore and remain on this installation, but are not backed up or trusted across devices.", color = soft)
+                    if (orphanedDevice) {
+                        Text(
+                            "Incomplete encrypted device data exists. Creating a new signing device could make old messages unreadable.",
+                            color = brand
+                        )
+                        TextButton(enabled = !busy, onClick = { confirmForget = true }) {
+                            Text("Erase incomplete local device (irreversible)")
+                        }
+                    }
+                    if (savedSession) {
+                        Text("An encrypted device already exists on this installation.", color = brand)
+                        Button(enabled = !busy, onClick = { scope.launch { attemptRestore() } }) { Text("Retry device restoration") }
+                        TextButton(enabled = !busy, onClick = { confirmForget = true }) { Text("Forget stored device (irreversible)") }
+                    }
                     OutlinedTextField(server, { server = it }, label = { Text("HTTPS homeserver origin") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(username, { username = it }, label = { Text("Matrix username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(password, { password = it }, label = { Text("Password") },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth())
-                    Button(enabled = !busy && username.isNotBlank() && password.isNotEmpty(),
+                    Button(enabled = !busy && !savedSession && !orphanedDevice &&
+                        username.isNotBlank() && password.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(), onClick = {
                             busy = true; error = ""; notice = ""
                             scope.launch {
@@ -109,9 +186,15 @@ private fun MessengerScreen() {
                                     rooms = engine.login(server, username, password) { refresh() }
                                     password = ""
                                     connected = true
-                                    notice = "Signed in using Matrix Rust SDK. Device verification and key recovery are not yet available."
-                                } catch (_: Exception) { error = "Could not sign in. Check your homeserver, TLS and credentials." }
-                                finally { busy = false }
+                                    savedSession = true
+                                    orphanedDevice = false
+                                    notice = "Device keys are now encrypted locally. No trusted cross-device key recovery is configured."
+                                } catch (_: Exception) {
+                                    orphanedDevice = engine.hasOrphanedLocalData()
+                                    error = if (orphanedDevice)
+                                        "Could not sign in. Encrypted local data was preserved; explicitly clear incomplete device data before trying again."
+                                    else "Could not sign in. Check your homeserver, TLS and credentials."
+                                } finally { busy = false }
                             }
                         }) { Text(if (busy) "Connecting…" else "Connect securely") }
                 }
@@ -220,7 +303,7 @@ private fun MessengerScreen() {
         if (error.isNotBlank()) Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall)
         if (notice.isNotBlank()) Text(notice, color = Color(0xFF95E0BB), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
-        Text("Experimental preview · No persistent keys, device verification, cross-signing or production security approval.",
+        Text("Experimental preview · Android Keystore-protected device · No cross-device key backup, verified identity, or production security approval.",
             style = MaterialTheme.typography.labelSmall, color = soft)
     }
 }

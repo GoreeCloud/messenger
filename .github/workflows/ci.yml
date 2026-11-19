@@ -45,7 +45,8 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-36 build-tools;35.0.0"
-      - run: chmod +x gradlew && ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
+      - name: Build and test Android (retry only dependency HTTP 429)
+        run: bash ../ci/retry_transient_gradle.sh ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
         working-directory: android
       - uses: actions/upload-artifact@v4
         with:
