@@ -163,6 +163,16 @@ private fun MessengerScreen() {
                             style = MaterialTheme.typography.labelSmall, color = soft)
                     }
                 }
+                TextButton(enabled = !busy, onClick = {
+                    busy = true; error = ""
+                    scope.launch {
+                        try {
+                            val more = engine.loadOlder(room.id)
+                            if (!more) notice = "No additional local history was returned."
+                        } catch (_: Exception) { error = "Unable to load older messages." }
+                        finally { busy = false }
+                    }
+                }) { Text("Load older messages") }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(messages, key = { it.id }) { msg ->
                         Surface(shape = RoundedCornerShape(16.dp), color = if (msg.own) Color(0xFF413974) else surface,
