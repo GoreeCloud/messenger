@@ -12,7 +12,8 @@ This is a priority plan, not a release claim.
 - [x] Integrate pinned native Kotlin Matrix Rust SDK bindings and compile with upstream crypto.
 - [ ] Independently verify encrypted two-account, two-device send/receive and device trust.
 - [ ] Device cross-signing, key verification and secure backup/recovery.
-- [ ] Full two-user integration test against isolated Synapse.
+- [x] Add an opt-in two-account E2EE integration harness with safe local preflight.
+- [ ] Execute and pass the full two-user encrypted round trip against isolated Synapse.
 
 ## Messaging features
 - [ ] Media, voice notes, file encryption, reactions, replies, editing and threads.

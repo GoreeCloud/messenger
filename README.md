@@ -63,3 +63,11 @@ GoreeCloud UI provides the verified current alpha semantic colors, spacing and t
 Read [architecture](docs/ARCHITECTURE.md), [security limitations](docs/SECURITY.md), [roadmap](docs/ROADMAP.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 **Licensing:** Original first-party code is Apache-2.0. Vendored Synapse code remains AGPL-3.0-or-later and retains its own license and notices. Dependencies keep their respective upstream licenses. This repository has no verified production deployment, public service endpoint, Stable release, signed Android package or configured ongoing automation.
+
+## Manual E2EE acceptance testing
+
+The opt-in two-account live-encryption test lives at web/scripts/e2ee-smoke.mjs.
+It requires an isolated TLS homeserver and two disposable test accounts, never
+runs in public CI, and does not save credentials or encrypted keys. See
+[docs/E2EE_TESTING.md](docs/E2EE_TESTING.md) for prerequisites, limitations and
+remaining cross-platform, device-trust and key-recovery acceptance gates.

@@ -2,10 +2,14 @@ import { EventType, MatrixClient, MsgType, RelationType } from "matrix-js-sdk";
 
 /** Never rely on a decorative padlock or a stale room-list flag for send authorization. */
 export async function requireEncryptedRoom(client: MatrixClient, roomId: string): Promise<void> {
-  if (!roomId || !client.getRoom(roomId) || !client.isRoomEncrypted(roomId)) {
-    throw new Error("Sending is disabled unless room encryption is confirmed.");
+  const room = client.getRoom(roomId);
+  if (!roomId || !room || room.getMyMembership() !== "join") {
+    throw new Error("Sending is disabled unless the room is joined.");
   }
   const crypto = client.getCrypto();
+  // The synchronous isRoomEncrypted() API is deprecated for Rust crypto.
+  // The crypto store tracks encryption even if a compromised server removes
+  // the state event (a downgrade attempt).
   if (!crypto || !(await crypto.isEncryptionEnabledInRoom(roomId))) {
     throw new Error("Cryptographic room state is unavailable. Message was not sent.");
   }

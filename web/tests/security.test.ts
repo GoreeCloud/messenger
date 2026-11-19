@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { MatrixClient } from "matrix-js-sdk";
 import { reactEncrypted, requireEncryptedRoom, safeMessage, sendEncryptedText } from "../src/security";
 
-function mockClient(options: { room?: boolean; encrypted?: boolean; crypto?: boolean; persistent?: boolean } = {}) {
+function mockClient(options: { room?: boolean; membership?: boolean; crypto?: boolean; persistent?: boolean } = {}) {
   const crypto = { isEncryptionEnabledInRoom: vi.fn(async () => options.persistent !== false) };
   const mock = {
-    getRoom: vi.fn(() => options.room === false ? null : {}),
-    isRoomEncrypted: vi.fn(() => options.encrypted !== false),
+    getRoom: vi.fn(() => options.room === false ? null : {
+      getMyMembership: () => options.membership === false ? "invite" : "join",
+    }),
     getCrypto: vi.fn(() => options.crypto === false ? undefined : crypto),
     sendTextMessage: vi.fn(async () => ({})),
     sendMessage: vi.fn(async () => ({})),
@@ -17,7 +18,7 @@ function mockClient(options: { room?: boolean; encrypted?: boolean; crypto?: boo
 
 describe("Matrix encrypted message enforcement", () => {
   it.each([
-    { room: false }, { encrypted: false }, { crypto: false }, { persistent: false },
+    { room: false }, { membership: false }, { crypto: false }, { persistent: false },
   ])("blocks messaging when encrypted room/crypto cannot be verified: %j", async options => {
     const { client, mock } = mockClient(options);
     await expect(sendEncryptedText(client, "!room:test", "hello")).rejects.toThrow();
@@ -41,7 +42,7 @@ describe("Matrix encrypted message enforcement", () => {
     expect(JSON.stringify(mock.sendMessage.mock.calls[0])).toContain("$123");
   });
   it("guards reactions behind E2EE and supported emoji", async () => {
-    const { client, mock } = mockClient({ encrypted: false });
+    const { client, mock } = mockClient({ persistent: false });
     await expect(reactEncrypted(client, "!room:test", "$123", "👍")).rejects.toThrow();
     expect(mock.sendEvent).not.toHaveBeenCalled();
     await expect(reactEncrypted(client, "!room:test", "$123", "🚀")).rejects.toThrow();
