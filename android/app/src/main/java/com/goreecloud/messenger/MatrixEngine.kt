@@ -37,6 +37,8 @@ class MatrixEngine : AutoCloseable {
     private var syncTask: TaskHandle? = null
     private var timelineTask: TaskHandle? = null
     private var timeline: Timeline? = null
+    private val timelineLock = Any()
+    private var generation = 0L
     private var selectedRoomId: String? = null
     private val timelineItems = mutableListOf<TimelineItem>()
 
@@ -91,34 +93,61 @@ class MatrixEngine : AutoCloseable {
     }
 
     suspend fun openRoom(roomId: String, update: (List<TimelineEntry>) -> Unit) = withContext(Dispatchers.IO) {
-        timelineTask?.cancel()
-        timelineTask?.close()
-        timeline?.close()
-        timeline = null
-        timelineTask = null
-        timelineItems.clear()
-        selectedRoomId = roomId
+        // Late asynchronous callbacks from older rooms must not replace this room.
+        val requestedGeneration = synchronized(timelineLock) {
+            generation += 1
+            timelineTask?.cancel()
+            timelineTask?.close()
+            timeline?.close()
+            timeline = null
+            timelineTask = null
+            timelineItems.clear()
+            selectedRoomId = roomId
+            generation
+        }
         val room = requireNotNull(client?.getRoom(roomId)) { "The room is unavailable." }
         require(room.membership() == Membership.JOINED) { "This room has not been joined." }
         val opened = room.timeline()
-        timeline = opened
-        timelineTask = opened.addListener(object : TimelineListener {
+        val subscription = opened.addListener(object : TimelineListener {
             override fun onUpdate(diff: List<TimelineDiff>) {
-                applyTimelineDiff(timelineItems, diff)
-                val visible = timelineItems.mapNotNull { item ->
-                    val event = item.asEvent() ?: return@mapNotNull null
-                    val kind = (event.content as? TimelineItemContent.MsgLike)?.content?.kind
-                    val message = when (kind) {
-                        is MsgLikeKind.Message -> kind.content.body
-                        is MsgLikeKind.UnableToDecrypt -> "Encrypted message cannot be decrypted on this device."
-                        MsgLikeKind.Redacted -> "Message removed."
-                        else -> return@mapNotNull null
-                    }
-                    TimelineEntry(item.uniqueId().id, event.sender, message, event.isOwn)
+                val visible = synchronized(timelineLock) {
+                    if (generation != requestedGeneration || selectedRoomId != roomId) return
+                    applyTimelineDiff(timelineItems, diff)
+                    timelineItems.mapNotNull { item ->
+                        val event = item.asEvent() ?: return@mapNotNull null
+                        val kind = (event.content as? TimelineItemContent.MsgLike)?.content?.kind
+                        val body = when (kind) {
+                            is MsgLikeKind.Message -> kind.content.body
+                            is MsgLikeKind.UnableToDecrypt -> "Encrypted message cannot be decrypted on this device."
+                            MsgLikeKind.Redacted -> "Message removed."
+                            else -> return@mapNotNull null
+                        }
+                        TimelineEntry(item.uniqueId().id, event.sender, body, event.isOwn)
+                    }.takeLast(150)
                 }
-                update(visible.takeLast(150))
+                // This callback may be on the Rust SDK thread. UI marshals the snapshot.
+                update(visible)
             }
         })
+        synchronized(timelineLock) {
+            if (generation != requestedGeneration || selectedRoomId != roomId) {
+                subscription.cancel()
+                subscription.close()
+                opened.close()
+            } else {
+                timeline = opened
+                timelineTask = subscription
+            }
+        }
+    }
+
+    suspend fun loadOlder(roomId: String): Boolean = withContext(Dispatchers.IO) {
+        val current = synchronized(timelineLock) {
+            require(selectedRoomId == roomId) { "Select the room again." }
+            requireNotNull(timeline) { "Room timeline unavailable." }
+        }
+        // SDK controls pagination tokens. No raw HTTP history scraping.
+        current.paginateBackwards(30u)
     }
 
     suspend fun sendEncrypted(roomId: String, body: String) = withContext(Dispatchers.IO) {
@@ -148,19 +177,22 @@ class MatrixEngine : AutoCloseable {
     }
 
     override fun close() {
-        syncTask?.cancel()
-        timelineTask?.cancel()
-        syncTask?.close()
-        timelineTask?.close()
-        timeline?.close()
-        syncTask = null
-        timelineTask = null
-        timeline = null
-        timelineItems.clear()
-        selectedRoomId = null
-        // Do not close until after network logout (when explicitly requested).
-        client?.close()
-        client = null
+        synchronized(timelineLock) {
+            generation += 1
+            syncTask?.cancel()
+            timelineTask?.cancel()
+            syncTask?.close()
+            timelineTask?.close()
+            timeline?.close()
+            syncTask = null
+            timelineTask = null
+            timeline = null
+            timelineItems.clear()
+            selectedRoomId = null
+            // Do not close until after network logout (when explicitly requested).
+            client?.close()
+            client = null
+        }
     }
 }
 
@@ -174,10 +206,10 @@ internal fun applyTimelineDiff(items: MutableList<TimelineItem>, diffs: List<Tim
             is TimelineDiff.PushBack -> items.add(diff.value)
             TimelineDiff.PopFront -> if (items.isNotEmpty()) items.removeAt(0)
             TimelineDiff.PopBack -> if (items.isNotEmpty()) items.removeAt(items.lastIndex)
-            is TimelineDiff.Insert -> if (diff.index.toInt() <= items.size) items.add(diff.index.toInt(), diff.value)
-            is TimelineDiff.Set -> if (diff.index.toInt() in items.indices) items[diff.index.toInt()] = diff.value
-            is TimelineDiff.Remove -> if (diff.index.toInt() in items.indices) items.removeAt(diff.index.toInt())
-            is TimelineDiff.Truncate -> items.subList(diff.length.toInt().coerceAtMost(items.size), items.size).clear()
+            is TimelineDiff.Insert -> if (diff.index.toLong() <= items.size.toLong()) items.add(diff.index.toInt(), diff.value)
+            is TimelineDiff.Set -> if (diff.index.toLong() < items.size.toLong()) items[diff.index.toInt()] = diff.value
+            is TimelineDiff.Remove -> if (diff.index.toLong() < items.size.toLong()) items.removeAt(diff.index.toInt())
+            is TimelineDiff.Truncate -> items.subList(diff.length.toLong().coerceAtMost(items.size.toLong()).toInt(), items.size).clear()
             is TimelineDiff.Reset -> { items.clear(); items.addAll(diff.values) }
         }
     }
