@@ -1,7 +1,7 @@
 import { ClientEvent, createClient, EventType, MatrixClient, Preset, RoomEvent, Visibility } from "matrix-js-sdk";
 import { normalizeHomeserver } from "./config";
 
-export type MessageView = { id: string; body: string; sender: string; timestamp: number };
+export type MessageView = { id: string; body: string; sender: string; timestamp: number; reactions: { emoji: string; count: number }[] };
 export type RoomView = { id: string; name: string; encrypted: boolean; messages: MessageView[] };
 
 /** A deliberately memory-only session: no credentials or bearer tokens in browser storage. */
@@ -18,26 +18,50 @@ export async function connect(
   });
   // Abort the entire login if the audited upstream Rust-backed crypto cannot initialize.
   // Never silently fall back to sending plaintext in encrypted conversations.
-  await client.initRustCrypto({ useIndexedDB: false });
-  client.on(ClientEvent.Sync, changed);
-  client.on(RoomEvent.Timeline, changed);
-  await client.startClient({ initialSyncLimit: 50 });
-  return client;
+  try {
+    await client.initRustCrypto({ useIndexedDB: false });
+    if (!client.getCrypto()) throw new Error("Unable to initialize Matrix cryptography.");
+    client.on(ClientEvent.Sync, changed);
+    client.on(RoomEvent.Timeline, changed);
+    await client.startClient({ initialSyncLimit: 50 });
+    return client;
+  } catch (error) {
+    // Do not keep an orphaned logged-in device if crypto initialization fails.
+    client.stopClient();
+    try { await client.logout(); } catch { /* credential stays memory-only */ }
+    throw error;
+  }
 }
 
 export function listRooms(client: MatrixClient): RoomView[] {
   return client.getRooms()
     .filter(room => room.getMyMembership() === "join")
     .map(room => {
-      const encrypted = Boolean(room.currentState.getStateEvents(EventType.RoomEncryption, ""));
-      const messages = room.getLiveTimeline().getEvents()
+      const encrypted = client.isRoomEncrypted(room.roomId);
+      const timeline = room.getLiveTimeline().getEvents();
+      const reactionCounts = new Map<string, Map<string, number>>();
+      for (const event of timeline.filter(event => event.getType() === EventType.Reaction)) {
+        const relation = event.getContent()["m.relates_to"] as
+          | { rel_type?: unknown; event_id?: unknown; key?: unknown } | undefined;
+        if (relation?.rel_type !== "m.annotation" || typeof relation.event_id !== "string" ||
+            !["👍", "❤️", "🎉"].includes(String(relation.key))) continue;
+        const counts = reactionCounts.get(relation.event_id) || new Map<string, number>();
+        counts.set(String(relation.key), (counts.get(String(relation.key)) || 0) + 1);
+        reactionCounts.set(relation.event_id, counts);
+      }
+      const messages = timeline
         .filter(event => event.getType() === EventType.RoomMessage)
-        .map(event => ({
-          id: event.getId() || "",
-          body: String(event.getContent().body || ""),
-          sender: event.getSender() || "Unknown sender",
-          timestamp: event.getTs(),
-        }));
+        .map(event => {
+          const id = event.getId() || "";
+          const body = event.isDecryptionFailure()
+            ? "Encrypted message unavailable — check device keys."
+            : String(event.getContent().body || "[Unsupported message]");
+          return {
+            id, body, sender: event.getSender() || "Unknown sender",
+            timestamp: event.getTs(),
+            reactions: [...(reactionCounts.get(id) || new Map()).entries()].map(([emoji, count]) => ({ emoji, count })),
+          };
+        });
       return { id: room.roomId, name: room.name || room.roomId, encrypted, messages: messages.slice(-80) };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
