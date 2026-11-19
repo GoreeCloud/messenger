@@ -1,7 +1,7 @@
 name: Messenger foundation checks
 on:
   push:
-    branches: [main, "feat/**"]
+    branches: [main]
   pull_request:
     branches: [main]
 permissions:
@@ -41,6 +41,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          cache: gradle
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-36 build-tools;35.0.0"
@@ -52,3 +53,11 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
           if-no-files-found: error
+  backend:
+    name: backend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s deploy/tests -v
+      - run: python3 deploy/verify_source.py
+      - run: bash deploy/build_source.sh

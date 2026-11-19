@@ -23,3 +23,18 @@ docker run --rm -v "$PWD/data/synapse:/data" \
 8. Shut down with docker compose down. Data deletion is a separate destructive action requiring a recovery decision.
 
 The dev image is upstream prebuilt v1.163.0; it is not a verified image built from the vendored Synapse source. For production add source reproducibility, TLS reverse proxy, Postgres, encryption/key lifecycle, rate limiting, backups, restore tests and monitoring.
+
+## Opt-in builds from the vendored source
+
+Run `python3 deploy/verify_source.py` and `bash deploy/build_source.sh` to review
+source structure and the dry-run build command. After independently reviewing the
+upstream Dockerfile and dependencies, `bash deploy/build_source.sh --execute`
+requests a local Podman or Docker source-image build. Do not treat this as
+reproducible, vulnerability-scanned or deployment-ready.
+
+`deploy/compose.source.yaml` selects the local source build. It retains
+loopback-only HTTP exposure, no automatic restart and separate runtime data.
+Do not run this configuration until the signing keys and server configuration
+are reviewed. Use `docker compose -f compose.source.yaml ...` or an appropriate
+compatible container runtime only for an explicitly authorized local test.
+All production hardening and restore requirements remain open.
