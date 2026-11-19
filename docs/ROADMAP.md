@@ -20,7 +20,9 @@ This is a priority plan, not a release claim.
 - [ ] Execute and pass the full two-user encrypted round trip against isolated Synapse.
 
 ## Messaging features
-- [ ] Media, voice notes, file encryption, reactions, replies, editing and threads.
+- [ ] Media, voice notes, encrypted attachments, message editing and threads.
+- [x] Web emoji reaction and reply source; Android now has SDK-backed encrypted-room emoji reactions.
+- [ ] Test encrypted reactions across two real devices against a trusted test Matrix homeserver.
 - [ ] Encrypted groups, roles and moderation.
 - [ ] Voice/video using reviewed MatrixRTC, TURN and LiveKit.
 - [ ] Opt-in push and GoreeCloud Notify integration.

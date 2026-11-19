@@ -16,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -263,6 +265,38 @@ private fun MessengerScreen() {
                             Column(Modifier.padding(13.dp)) {
                                 Text(msg.sender, style = MaterialTheme.typography.labelSmall, color = brand, maxLines = 1)
                                 Text(msg.body, style = MaterialTheme.typography.bodyMedium)
+                                if (room.encrypted && msg.remoteEventId != null) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        ReactionPolicy.supportedEmoji.forEach { emoji ->
+                                            val existing = msg.reactions.find { it.emoji == emoji }
+                                            TextButton(
+                                                enabled = !busy,
+                                                onClick = {
+                                                    busy = true; error = ""
+                                                    scope.launch {
+                                                        try {
+                                                            engine.toggleReaction(room.id, msg.remoteEventId, emoji)
+                                                        } catch (_: Exception) {
+                                                            error = "Encrypted reaction failed. No plaintext fallback was attempted."
+                                                        } finally { busy = false }
+                                                    }
+                                                },
+                                                modifier = Modifier.semantics {
+                                                    contentDescription = "Toggle $emoji reaction"
+                                                },
+                                                colors = ButtonDefaults.textButtonColors(
+                                                    contentColor = if (existing?.reactedByMe == true) brand else soft
+                                                )
+                                            ) {
+                                                Text(if (existing != null && existing.count > 0)
+                                                    "$emoji " + existing.count else emoji)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
