@@ -37,7 +37,7 @@ export function listRooms(client: MatrixClient): RoomView[] {
   return client.getRooms()
     .filter(room => room.getMyMembership() === "join")
     .map(room => {
-      const encrypted = client.isRoomEncrypted(room.roomId);
+      const encrypted = room.hasEncryptionStateEvent();
       const timeline = room.getLiveTimeline().getEvents();
       const reactionCounts = new Map<string, Map<string, number>>();
       for (const event of timeline.filter(event => event.getType() === EventType.Reaction)) {
