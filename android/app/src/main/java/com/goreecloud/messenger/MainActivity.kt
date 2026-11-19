@@ -53,6 +53,7 @@ private fun MessengerScreen() {
     var password by remember { mutableStateOf("") }
     var connected by remember { mutableStateOf(false) }
     var savedSession by remember(engine) { mutableStateOf(engine.hasStoredSession()) }
+    var orphanedDevice by remember(engine) { mutableStateOf(engine.hasOrphanedLocalData()) }
     var confirmSignOut by remember { mutableStateOf(false) }
     var confirmForget by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -110,7 +111,7 @@ private fun MessengerScreen() {
                     busy = true
                     try {
                         engine.logout()
-                        connected = false; savedSession = false
+                        connected = false; savedSession = false; orphanedDevice = false
                         selected = null; rooms = emptyList(); messages = emptyList()
                         notice = "Local encrypted device removed. Key backup is not configured."
                     } catch (_: Exception) { error = "Could not completely remove device data. Do not reuse this device until local storage is cleared." }
@@ -131,6 +132,7 @@ private fun MessengerScreen() {
                 try {
                     engine.forgetStoredSession()
                     savedSession = false
+                    orphanedDevice = false
                     error = ""
                     notice = "Local encrypted device erased."
                 } catch (_: Exception) { error = "Could not fully erase device data." }
@@ -155,6 +157,15 @@ private fun MessengerScreen() {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
                     Text("Connect to your homeserver", style = MaterialTheme.typography.headlineSmall)
                     Text("Sign in to an existing Matrix account. Device keys are encrypted using Android Keystore and remain on this installation, but are not backed up or trusted across devices.", color = soft)
+                    if (orphanedDevice) {
+                        Text(
+                            "Incomplete encrypted device data exists. Creating a new signing device could make old messages unreadable.",
+                            color = brand
+                        )
+                        TextButton(enabled = !busy, onClick = { confirmForget = true }) {
+                            Text("Erase incomplete local device (irreversible)")
+                        }
+                    }
                     if (savedSession) {
                         Text("An encrypted device already exists on this installation.", color = brand)
                         Button(enabled = !busy, onClick = { scope.launch { attemptRestore() } }) { Text("Retry device restoration") }
@@ -166,7 +177,8 @@ private fun MessengerScreen() {
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth())
-                    Button(enabled = !busy && !savedSession && username.isNotBlank() && password.isNotEmpty(),
+                    Button(enabled = !busy && !savedSession && !orphanedDevice &&
+                        username.isNotBlank() && password.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth(), onClick = {
                             busy = true; error = ""; notice = ""
                             scope.launch {
@@ -175,9 +187,14 @@ private fun MessengerScreen() {
                                     password = ""
                                     connected = true
                                     savedSession = true
+                                    orphanedDevice = false
                                     notice = "Device keys are now encrypted locally. No trusted cross-device key recovery is configured."
-                                } catch (_: Exception) { error = "Could not sign in. Check your homeserver, TLS and credentials." }
-                                finally { busy = false }
+                                } catch (_: Exception) {
+                                    orphanedDevice = engine.hasOrphanedLocalData()
+                                    error = if (orphanedDevice)
+                                        "Could not sign in. Encrypted local data was preserved; explicitly clear incomplete device data before trying again."
+                                    else "Could not sign in. Check your homeserver, TLS and credentials."
+                                } finally { busy = false }
                             }
                         }) { Text(if (busy) "Connecting…" else "Connect securely") }
                 }

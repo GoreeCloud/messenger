@@ -23,7 +23,12 @@ a new authenticated session on each login using the same Matrix device ID.
 
 The Web Locks API must grant exclusive access to the crypto database; a
 second active tab using the same crypto scope is **rejected**, rather than
-risking Rust SDK database corruption. Without IndexedDB, secure Web Crypto
+risking Rust SDK database corruption. Before login, the app checks that both
+expected Rust crypto databases are present when a device ID is remembered,
+or that neither exists on first use. A partial browser-storage wipe is blocked
+rather than silently reusing an old signing device ID with new keys. This
+currently requires support for IndexedDB database enumeration
+(\`indexedDB.databases()\`). Without that API, secure Web Crypto, IndexedDB,
 or Web Locks the opt-in feature fails closed. On sign-out, the account session
 token is discarded but the encrypted IndexedDB crypto state remains until
 the browser's site data is cleared.
@@ -46,6 +51,9 @@ the browser's site data is cleared.
 - If your homeserver returns a different device ID for a stored account,
   GoreeCloud refuses to load that device's crypto database rather than
   silently creating conflicting device keys.
+- If you clear only LocalStorage but leave the crypto databases, or delete
+  a crypto database while keeping its device ID, sign-in is blocked. Preserve
+  data for recovery investigation rather than repeatedly attempting a login.
 - Clearing browser site data is destructive: it removes any local encrypted
   keys regardless of whether a server-side backup exists. Confirm recovery
   readiness before clearing it.
