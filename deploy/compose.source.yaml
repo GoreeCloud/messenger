@@ -1,0 +1,17 @@
+# Explicit opt-in, source-built local development. Not a production deployment.
+name: goreecloud-messenger-source-preview
+services:
+  synapse:
+    build:
+      context: ../third_party/synapse
+      dockerfile: docker/Dockerfile
+    image: goreecloud-messenger/synapse:1.163.0-source-local
+    restart: "no"
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    ports:
+      - "127.0.0.1:8008:8008"
+    volumes:
+      - ./data/synapse:/data
+    security_opt:
+      - no-new-privileges:true
