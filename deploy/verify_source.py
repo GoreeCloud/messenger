@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "third_party" / "synapse"
 EXPECTED_VERSION = "1.163.0"
 EXPECTED_COMMIT = "193cf9466fbfbe334700c541dc1442f135179aaf"
+EXPECTED_DIGEST = "8898778d5ffd986653741c33d0dd5a76d61a9c7ada1a8e51482d232741c6710a"
 
 
 def source_digest(directory: Path = SOURCE) -> str:
@@ -82,7 +83,11 @@ def main() -> int:
         return 1
     print("PASS: vendored Synapse " + EXPECTED_VERSION + " source structure and loopback Compose policies")
     print("Pinned upstream commit (provenance reference): " + EXPECTED_COMMIT)
-    print("Source directory content digest SHA256: " + source_digest())
+    current_digest = source_digest()
+    if current_digest != EXPECTED_DIGEST:
+        print("FAIL: vendored source tree does not match pinned source snapshot.", file=sys.stderr)
+        return 1
+    print("Verified vendored source digest SHA256: " + current_digest)
     print("No image was built, executed or vulnerability-audited by this check.")
     return 0
 

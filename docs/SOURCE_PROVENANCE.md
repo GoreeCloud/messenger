@@ -31,3 +31,15 @@ Before deploying, complete issue #4: audited source-built image, TLS ingress,
 PostgreSQL, restrictive registration and anti-abuse, key and metadata
 retention, secure backups and restore testing. A source digest can identify
 drift, but alone does not establish upstream equivalence or package safety.
+
+## Verifiable vendored snapshot
+
+The upstream source snapshot is checked against a pinned SHA-256 digest
+(over relative paths, file bytes and symlink targets), calculated against
+the local clone of commit 193cf9466fbfbe334700c541dc1442f135179aaf:
+
+8898778d5ffd986653741c33d0dd5a76d61a9c7ada1a8e51482d232741c6710a
+
+The previously omitted original upstream .coveragerc is restored without
+modifying upstream text. This check detects source drift but does not verify
+cryptographic Git tag signatures or independently audit upstream authors.
