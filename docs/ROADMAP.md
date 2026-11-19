@@ -6,9 +6,11 @@ This is a priority plan, not a release claim.
 - [x] Create a public monorepo and source for web and native Android clients.
 - [x] Implement web Matrix login, room list, encrypted room creation, invites and basic messaging.
 - [x] Limit web sending to encrypted rooms; keep tokens in memory and validate homeserver URL.
-- [x] Native Compose login, room listing and read-only unencrypted-room timeline.
+- [x] Native Compose login, room listing, Matrix Rust SDK encrypted-room timeline, private-room creation, invitations and encrypted send source.
+- [x] Android local debug build and unit policy checks (not network/device acceptance).
 - [x] Adopt verified GoreeCloud UI alpha color roles for current preview.
-- [ ] Implement native Kotlin Matrix Rust SDK crypto bindings with E2EE round-trip tests.
+- [x] Integrate pinned native Kotlin Matrix Rust SDK bindings and compile with upstream crypto.
+- [ ] Independently verify encrypted two-account, two-device send/receive and device trust.
 - [ ] Device cross-signing, key verification and secure backup/recovery.
 - [ ] Full two-user integration test against isolated Synapse.
 

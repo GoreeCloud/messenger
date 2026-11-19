@@ -10,14 +10,14 @@ GoreeCloud Messenger is an open-source Matrix-compatible messaging project with 
 | --- | --- | --- |
 | Existing Matrix account login | Yes, memory-only credentials | Yes, memory-only credentials |
 | Joined room list | Yes | Yes |
-| Message timeline | Matrix SDK, including E2EE when crypto works | Unencrypted rooms only (read-only) |
-| Create private encrypted rooms | Yes | Not yet |
-| Invite Matrix users | Yes | Not yet |
-| Send messages | Only in encrypted rooms | Disabled pending native E2EE |
+| Message timeline | Matrix SDK, including E2EE when crypto works | Matrix Rust SDK timeline, including encrypted-room events |
+| Create private encrypted rooms | Yes | Yes, unverified E2EE runtime preview |
+| Invite Matrix users | Yes | Yes, encrypted rooms |
+| Send messages | Only in encrypted rooms | Only in encrypted rooms, via Matrix Rust SDK |
 | Native device verification and recovery | Not yet | Not yet |
 | Voice/video, media, push, moderation | Planned | Planned |
 
-No Signal-equivalent security claim is made. Web crypto depends on the upstream Matrix Rust-backed SDK, and long-term key recovery, cross-signing and device verification are not implemented. Android does not read encrypted content or send messages. Both clients keep access tokens in memory, not on disk; the web crypto store is memory-only and loses keys on refresh.
+No Signal-equivalent security claim is made. Web crypto depends on the upstream Matrix Rust-backed SDK, and long-term key recovery, cross-signing and device verification are not implemented. Android now uses upstream Matrix Rust SDK crypto for room timelines and encrypted send/receive, but no two-device exchange, device verification or key recovery has been accepted. Both clients keep access tokens in memory, not on disk; the web crypto store is memory-only and loses keys on refresh.
 
 ## Repository
 
@@ -50,7 +50,7 @@ cd android
 ./gradlew :app:assembleDebug
 ~~~
 
-The debug APK is generated at android/app/build/outputs/apk/debug/app-debug.apk when the build succeeds. Device testing and signed distribution remain outstanding.
+The debug APK is generated at android/app/build/outputs/apk/debug/app-debug.apk when the build succeeds. It includes large Matrix Rust native binaries; physical device testing, secret recovery, signed distribution, and actual E2EE round trips remain outstanding.
 
 Passing GitHub Actions workflow runs also retain **development-only** web bundles and
 Android debug APKs for seven days as CI artifacts. These are unsigned-for-release
