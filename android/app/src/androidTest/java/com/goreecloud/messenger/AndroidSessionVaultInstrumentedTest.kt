@@ -71,6 +71,34 @@ class AndroidSessionVaultInstrumentedTest {
         assertTrue(filename.exists())
     }
 
+    @Test fun missingWrappedKeyNeverSilentlyRotatesExistingDevice() {
+        val first = vault()
+        first.storeKey().fill(0)
+        val keyRecord = File(root(), "store-key.enc")
+        assertTrue(first.hasLocalDeviceData())
+        assertTrue(keyRecord.delete())
+        assertThrows(IllegalStateException::class.java) { vault().storeKey() }
+        assertFalse(keyRecord.exists())
+    }
+
+    @Test fun incompleteSessionRequiresExplicitForget() {
+        val first = vault()
+        first.storeKey().fill(0)
+        first.saveSession(Session(
+            accessToken = "synthetic-token-for-an-orphaned-vault",
+            refreshToken = null,
+            userId = "@synthetic:test.invalid",
+            deviceId = "TESTDEVICE",
+            homeserverUrl = "https://matrix.test.invalid",
+            oauthData = null,
+            slidingSyncVersion = SlidingSyncVersion.NONE,
+        ))
+        assertTrue(File(root(), "store-key.enc").delete())
+        assertTrue(first.hasSession())
+        assertThrows(IllegalStateException::class.java) { vault().storeKey() }
+        assertTrue(File(root(), "session.enc").exists())
+    }
+
     @Test fun deletingLocalDeviceRemovesKeyAndEncryptedSession() {
         val instance = vault()
         instance.storeKey().fill(0)

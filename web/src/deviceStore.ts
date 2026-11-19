@@ -31,6 +31,37 @@ export async function persistentDeviceScope(origin: string, account: string): Pr
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Matrix JS SDK 45.1.0 names its Rust crypto stores using these suffixes.
+ * Check both BEFORE login: reusing a remembered device without its crypto
+ * database would silently generate NEW keys under the OLD Matrix device ID.
+ */
+export function cryptoDatabasePrefix(scope: string): string {
+  if (!/^[0-9a-f]{64}$/.test(scope)) throw new Error("Invalid crypto device scope.");
+  return "goreecloud-messenger-v1-" + scope;
+}
+
+export function requiredCryptoDatabases(scope: string): readonly [string, string] {
+  const prefix = cryptoDatabasePrefix(scope);
+  return [prefix + "::matrix-sdk-crypto", prefix + "::matrix-sdk-crypto-meta"];
+}
+
+export function requireConsistentCryptoDatabases(
+  scope: string,
+  rememberedDeviceId: string | null,
+  existingNames: Iterable<string | undefined>,
+): void {
+  const expected = requiredCryptoDatabases(scope);
+  const existing = new Set(existingNames);
+  const present = expected.filter(name => existing.has(name));
+  if (rememberedDeviceId !== null && present.length !== expected.length) {
+    throw new Error("Encrypted device database is missing. Existing device keys cannot be safely restored.");
+  }
+  if (rememberedDeviceId === null && present.length > 0) {
+    throw new Error("Unrecognized encrypted device data found. Login is blocked to protect existing keys.");
+  }
+}
+
 export function storageKey(scope: string): string {
   if (!/^[0-9a-f]{64}$/.test(scope)) throw new Error("Invalid crypto device scope.");
   return "goreecloud-messenger-device-v1:" + scope;

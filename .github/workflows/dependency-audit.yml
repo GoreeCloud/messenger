@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -41,6 +41,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Test bounded Gradle rate-limit retry policy
+        run: python3 -m unittest discover -s ci/tests -v
       - name: Verify vendored Synapse tree and privacy defaults
         run: |
           python3 -m unittest discover -s deploy/tests -v

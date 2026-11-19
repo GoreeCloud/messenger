@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acquireCryptoLease, persistentDeviceScope, readRememberedDevice,
+  requireConsistentCryptoDatabases, requiredCryptoDatabases,
   storageKey, storeRememberedDevice, validateVaultPassphrase,
 } from "../src/deviceStore";
 
@@ -56,6 +57,24 @@ describe("encrypted device metadata policy", () => {
     await expect(acquireCryptoLease("crypto:one", undefined)).rejects.toThrow();
     const unavailable = { request: async (_name: string, _options: unknown, cb: (lock: unknown) => void) => cb(null) };
     await expect(acquireCryptoLease("crypto:one", unavailable)).rejects.toThrow();
+  });
+
+  it("rejects key loss when only part of remembered Rust store persists", async () => {
+    const scope = await persistentDeviceScope("https://matrix.example.org", "@alice:example.org");
+    const both = requiredCryptoDatabases(scope);
+    expect(both).toHaveLength(2);
+    expect(() => requireConsistentCryptoDatabases(scope, "DEVICE", both)).not.toThrow();
+    expect(() => requireConsistentCryptoDatabases(scope, "DEVICE", [both[0]])).toThrow(/database is missing/);
+    expect(() => requireConsistentCryptoDatabases(scope, "DEVICE", [])).toThrow(/database is missing/);
+  });
+
+  it("blocks orphaned crypto records when metadata is missing", async () => {
+    const scope = await persistentDeviceScope("https://matrix.example.org", "@alice:example.org");
+    const both = requiredCryptoDatabases(scope);
+    expect(() => requireConsistentCryptoDatabases(scope, null, [])).not.toThrow();
+    expect(() => requireConsistentCryptoDatabases(scope, null, [both[1]])).toThrow(/Unrecognized/);
+    expect(() => requireConsistentCryptoDatabases(scope, null, both)).toThrow(/Unrecognized/);
+    expect(() => requireConsistentCryptoDatabases(scope, null, ["unrelated-database"])).not.toThrow();
   });
 
   it("holds the granted lock until the session explicitly releases it", async () => {

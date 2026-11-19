@@ -6,6 +6,7 @@ import org.matrix.rustcomponents.sdk.Client
 import org.matrix.rustcomponents.sdk.ClientBuilder
 import org.matrix.rustcomponents.sdk.SqliteStoreBuilder
 import org.matrix.rustcomponents.sdk.CreateRoomParameters
+import org.matrix.rustcomponents.sdk.EventOrTransactionId
 import org.matrix.rustcomponents.sdk.Membership
 import org.matrix.rustcomponents.sdk.MessageType
 import org.matrix.rustcomponents.sdk.MsgLikeKind
@@ -26,7 +27,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 data class Conversation(val id: String, val name: String, val encrypted: Boolean)
-data class TimelineEntry(val id: String, val sender: String, val body: String, val own: Boolean)
+data class EmojiReaction(val emoji: String, val count: Int, val reactedByMe: Boolean)
+data class TimelineEntry(
+    val id: String,
+    val sender: String,
+    val body: String,
+    val own: Boolean,
+    val remoteEventId: String?,
+    val reactions: List<EmojiReaction>,
+)
 
 /**
  * Native Matrix Rust SDK client with Android Keystore-encrypted SQLite storage.
@@ -47,6 +56,7 @@ class MatrixEngine(context: Context) : AutoCloseable {
     private val timelineItems = mutableListOf<TimelineItem>()
 
     fun hasStoredSession() = vault.hasSession()
+    fun hasOrphanedLocalData() = vault.hasLocalDeviceData() && !vault.hasSession()
 
     private suspend fun buildClient(server: String): Client {
         val key = vault.storeKey()
@@ -77,8 +87,8 @@ class MatrixEngine(context: Context) : AutoCloseable {
     suspend fun login(server: String, username: String, password: String, updated: () -> Unit): List<Conversation> =
         withContext(Dispatchers.IO) {
             require(client == null) { "Already connected." }
-            require(!vault.hasSession()) {
-                "This installation already holds another session. Restore it or explicitly forget this device."
+            require(!vault.hasLocalDeviceData()) {
+                "Encrypted device data already exists. Restore or explicitly forget it before signing in."
             }
             val built = buildClient(server)
             try {
@@ -157,6 +167,7 @@ class MatrixEngine(context: Context) : AutoCloseable {
         val room = requireNotNull(client?.getRoom(roomId)) { "The room is unavailable." }
         require(room.membership() == Membership.JOINED) { "This room has not been joined." }
         val opened = room.timeline()
+        val ownUserId = client?.session()?.userId
         val subscription = opened.addListener(object : TimelineListener {
             override fun onUpdate(diff: List<TimelineDiff>) {
                 val visible = synchronized(timelineLock) {
@@ -171,7 +182,20 @@ class MatrixEngine(context: Context) : AutoCloseable {
                             MsgLikeKind.Redacted -> "Message removed."
                             else -> return@mapNotNull null
                         }
-                        TimelineEntry(item.uniqueId().id, event.sender, body, event.isOwn)
+                        // A local transaction ID is NOT a remote Matrix event
+                        // ID. Enable reactions only once its server ID exists.
+                        val remoteId = if (kind is MsgLikeKind.Message && event.isRemote) {
+                            (event.eventOrTransactionId as? EventOrTransactionId.EventId)?.eventId
+                        } else null
+                        val reactions = event.reactions
+                            .filter { it.key in ReactionPolicy.supportedEmoji }
+                            .map { reaction ->
+                                EmojiReaction(
+                                    reaction.key, reaction.senders.size,
+                                    reaction.senders.any { it.senderId == ownUserId },
+                                )
+                            }
+                        TimelineEntry(item.uniqueId().id, event.sender, body, event.isOwn, remoteId, reactions)
                     }.takeLast(150)
                 }
                 // This callback may be on the Rust SDK thread. UI marshals the snapshot.
@@ -209,6 +233,23 @@ class MatrixEngine(context: Context) : AutoCloseable {
         val content = messageEventContentNew(MessageType.Text(TextMessageContent(trimmed, null)))
         try { activeTimeline.send(content) } finally { content.close() }
     }
+
+    suspend fun toggleReaction(roomId: String, eventId: String, emoji: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val room = requireNotNull(client?.getRoom(roomId)) { "Room unavailable." }
+            // Resolve suspending SDK queries before entering Kotlin's monitor.
+            val isEncrypted = room.isEncrypted()
+            val isJoined = room.membership() == Membership.JOINED
+            val current = synchronized(timelineLock) {
+                ReactionPolicy.requireEncryptedReaction(
+                    roomId, selectedRoomId, eventId, emoji, isEncrypted, isJoined,
+                )
+                requireNotNull(timeline) { "Selected timeline unavailable." }
+            }
+            // SDK owns the encryption and local toggle semantics. Never send
+            // an unencrypted custom reaction HTTP request as fallback.
+            current.toggleReaction(EventOrTransactionId.EventId(eventId), emoji)
+        }
 
     suspend fun invite(roomId: String, userId: String) = withContext(Dispatchers.IO) {
         require(Regex("^@[^:\\s]+:[^:\\s]+$").matches(userId) && userId.length <= 255) {
