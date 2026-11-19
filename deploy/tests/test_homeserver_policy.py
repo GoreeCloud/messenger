@@ -55,6 +55,9 @@ class HomeserverPolicyTests(unittest.TestCase):
         item = local_config()
         item["disable_registration"] = False
         self.assertTrue(any("disable_registration" in e for e in check_policy(item)))
+        # Synapse parses quoted string "false" with strtobool, not YAML bool.
+        item["disable_registration"] = "false"
+        self.assertTrue(any("disable_registration" in e for e in check_policy(item)))
 
     def test_identity_lookup_and_telemetry_are_opt_in(self):
         item = local_config()

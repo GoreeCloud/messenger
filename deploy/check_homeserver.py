@@ -28,8 +28,8 @@ def check_policy(config: Any, mode: str = "local") -> list[str]:
     require_false("enable_registration")
     # Synapse's legacy disable_registration alias OVERRIDES enable_registration.
     # Therefore an explicit false alias re-enables signups despite the safe flag.
-    if config.get("disable_registration") is False:
-        errors.append("disable_registration=false overrides enable_registration=false.")
+    if "disable_registration" in config and config["disable_registration"] is not True:
+        errors.append("disable_registration must be true when set (Synapse override).")
     require_false("enable_registration_without_verification")
     require_false("allow_guest_access")
     require_false("url_preview_enabled")
