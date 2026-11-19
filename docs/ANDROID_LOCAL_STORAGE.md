@@ -23,10 +23,11 @@ server-side access token is not guaranteed.
 ## Verified checks
 
 - Local Gradle debug APK assembly and JVM tests pass.
-- Four isolated Android instrumentation tests passed on a connected OnePlus
+- Six isolated Android instrumentation tests passed on a connected OnePlus
   DE2117 Android 16 handset on November 19, 2026, with zero failures:
   key re-open across a new vault instance, encrypted synthetic session
-  re-open, detection of tampered ciphertext, and key deletion.
+  re-open, detection of tampered ciphertext, key deletion, missing wrapped
+  key refusal, and orphaned session refusal.
 - Tests use a **separate Keystore alias and test-only storage directory**,
   never real Matrix credentials or a production user's device account.
 
@@ -46,3 +47,17 @@ server-side access token is not guaranteed.
 credentials into public repositories, CI artifacts, tickets or logs.** Local
 key deletion can make previously encrypted messages permanently unreadable
 until a separate verified key-backup mechanism exists.
+
+## Lost or incomplete device records
+
+A wrapped SQLite store key, Keystore alias, saved session, or nonempty Rust
+storage directory is treated as existing device data. If the key wrapper is
+missing or corrupted, the app does **not** generate a replacement while those
+records exist. An explicit confirmation is required to erase an orphaned
+device. This is intended to prevent silent old-device-ID reuse and account
+mixups, not to recover encrypted history.
+
+A first-login failure can leave an incomplete local crypto database; the app
+then requires the user to explicitly clear it before retrying, until safe
+first-login transaction rollback is designed and tested. This conservative
+behavior is a preview limitation.

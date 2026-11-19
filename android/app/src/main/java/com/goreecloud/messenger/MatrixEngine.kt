@@ -47,6 +47,7 @@ class MatrixEngine(context: Context) : AutoCloseable {
     private val timelineItems = mutableListOf<TimelineItem>()
 
     fun hasStoredSession() = vault.hasSession()
+    fun hasOrphanedLocalData() = vault.hasLocalDeviceData() && !vault.hasSession()
 
     private suspend fun buildClient(server: String): Client {
         val key = vault.storeKey()
@@ -77,8 +78,8 @@ class MatrixEngine(context: Context) : AutoCloseable {
     suspend fun login(server: String, username: String, password: String, updated: () -> Unit): List<Conversation> =
         withContext(Dispatchers.IO) {
             require(client == null) { "Already connected." }
-            require(!vault.hasSession()) {
-                "This installation already holds another session. Restore it or explicitly forget this device."
+            require(!vault.hasLocalDeviceData()) {
+                "Encrypted device data already exists. Restore or explicitly forget it before signing in."
             }
             val built = buildClient(server)
             try {

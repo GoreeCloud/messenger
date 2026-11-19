@@ -45,6 +45,13 @@ internal class AndroidSessionVault(context: Context, testSlot: Boolean = false) 
 
     fun hasSession(): Boolean = sessionFile.baseFile.isFile
 
+    /** Detect orphaned crypto state without opening it or overwriting keys. */
+    fun hasLocalDeviceData(): Boolean =
+        storeKeyFile.baseFile.exists() || sessionFile.baseFile.exists() ||
+            keyStore.containsAlias(alias) ||
+            (File(dataPath).listFiles()?.isNotEmpty() == true) ||
+            (File(cachePath).listFiles()?.isNotEmpty() == true)
+
     private fun ensureDirectory() {
         require(directory.isDirectory || directory.mkdirs()) { "Cannot prepare private storage." }
         require(File(dataPath).isDirectory || File(dataPath).mkdirs()) { "Cannot prepare private storage." }
@@ -118,9 +125,12 @@ internal class AndroidSessionVault(context: Context, testSlot: Boolean = false) 
             require(key.size == 32) { "Invalid SQLite encryption key." }
             return key
         }
-        // An orphaned data directory might contain keys we cannot recover.
-        if (File(dataPath).listFiles()?.isNotEmpty() == true) {
-            throw IllegalStateException("Existing encrypted data requires its original key.")
+        // Missing key with any pre-existing device data must NEVER trigger a
+        // replacement key. That would silently change the Matrix signing device.
+        if (hasLocalDeviceData()) {
+            throw IllegalStateException(
+                "Existing or orphaned encrypted device data requires its original key."
+            )
         }
         val key = ByteArray(32).also { SecureRandom().nextBytes(it) }
         try {
