@@ -56,9 +56,39 @@ def check_source() -> list[str]:
     return errors
 
 
+
+def check_compose_bindings(content: str) -> list[str]:
+    """Defensively pin the sole published preview port; static known-schema check."""
+    errors: list[str] = []
+    ports: list[str] = []
+    blocks = 0
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith("#"):
+            continue
+        if line.strip() == "ports:":
+            blocks += 1
+            level = len(line) - len(line.lstrip())
+            for entry in lines[index + 1:]:
+                if not entry.strip() or entry.lstrip().startswith("#"):
+                    continue
+                indentation = len(entry) - len(entry.lstrip())
+                if indentation <= level:
+                    break
+                if indentation == level + 2 and entry.lstrip().startswith("- "):
+                    ports.append(entry.strip()[2:].strip('"').strip("'"))
+    if blocks != 1 or ports != ["127.0.0.1:8008:8008"]:
+        errors.append("Only one explicit loopback-mapped 8008 port is permitted.")
+    for unsafe in ("network_mode: host", "privileged: true", "pid: host", "/var/run/docker.sock"):
+        if any(unsafe in line for line in lines if not line.lstrip().startswith("#")):
+            errors.append("Host-privileged container configuration is forbidden.")
+            break
+    return errors
+
+
 def check_compose(name: str, require_source: bool) -> list[str]:
     content = (ROOT / "deploy" / name).read_text(encoding="utf-8")
-    errors = []
+    errors = check_compose_bindings(content)
     if '"127.0.0.1:8008:8008"' not in content:
         errors.append(name + ": must bind HTTP to loopback only")
     if 'restart: "no"' not in content:
