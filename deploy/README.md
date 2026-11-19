@@ -38,3 +38,4 @@ Do not run this configuration until the signing keys and server configuration
 are reviewed. Use `docker compose -f compose.source.yaml ...` or an appropriate
 compatible container runtime only for an explicitly authorized local test.
 All production hardening and restore requirements remain open.
+\n## Configuration audit\n\nReview [docs/HOMESERVER_POLICY.md](../docs/HOMESERVER_POLICY.md).\nBefore attempting to start an explicitly authorized test server, audit the\nprivate generated homeserver.yaml using deploy/check_homeserver.py. The\npolicy enforces explicit safe development settings and rejects public\nCompose port mappings; it never prints YAML secrets, starts containers,\nor claims a deployment is secure.\n

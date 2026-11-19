@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from verify_source import EXPECTED_DIGEST, SOURCE, check_compose, check_source, source_digest
+from verify_source import EXPECTED_DIGEST, SOURCE, check_compose, check_compose_bindings, check_source, source_digest
 
 
 class SourceChecks(unittest.TestCase):
@@ -20,6 +20,24 @@ class SourceChecks(unittest.TestCase):
 
     def test_source_compose_builds_from_vendored_tree(self):
         self.assertEqual([], check_compose("compose.source.yaml", True))
+
+    def test_exposed_public_port_is_rejected(self):
+        unsafe = """services:
+  synapse:
+    ports:
+      - "127.0.0.1:8008:8008"
+      - "0.0.0.0:8448:8448"
+"""
+        self.assertTrue(check_compose_bindings(unsafe))
+
+    def test_host_privileged_container_is_rejected(self):
+        unsafe = """services:
+  synapse:
+    ports:
+      - "127.0.0.1:8008:8008"
+    privileged: true
+"""
+        self.assertTrue(check_compose_bindings(unsafe))
 
     def test_digest_changes_on_content_change(self):
         with tempfile.TemporaryDirectory() as temporary:
