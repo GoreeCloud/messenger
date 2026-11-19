@@ -92,3 +92,8 @@ button.bordered{border:1px solid var(--outline);width:100%}
 
 /* Progressive, keyboard-accessible reply and reaction actions. */
 .message-actions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:12px}.message-action{padding:5px 9px;background:transparent;color:var(--soft);border:1px solid #67728a;border-radius:999px;font-size:.74rem;min-height:36px}.message-action:hover{background:var(--tonal)}.reaction-pill{font-size:.72rem;border-radius:999px;padding:3px 8px;background:var(--tonal);color:var(--text)}.reply-target{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:7px 26px;border-top:1px solid #4a5571;background:var(--surface);color:var(--soft);font-size:.78rem}.reply-target span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Explicit opt-in for encrypted local key retention. */
+.persist-device-label{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:.88rem;font-weight:600}
+.persist-device-label input[type="checkbox"]{width:18px;height:18px;min-height:18px;accent-color:var(--brand)}
+.local-crypto-note{font-size:.78rem;line-height:1.5;color:var(--soft);max-width:42ch;margin-top:0}

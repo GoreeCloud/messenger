@@ -1,34 +1,92 @@
 import { ClientEvent, createClient, EventType, MatrixClient, Preset, RoomEvent, Visibility } from "matrix-js-sdk";
 import { normalizeHomeserver } from "./config";
+import {
+  acquireCryptoLease, persistentDeviceScope, readRememberedDevice, storeRememberedDevice,
+  storageKey, validateVaultPassphrase,
+} from "./deviceStore";
+import type { ExclusiveLock } from "./deviceStore";
 
 export type MessageView = { id: string; body: string; sender: string; timestamp: number; reactions: { emoji: string; count: number }[] };
 export type RoomView = { id: string; name: string; encrypted: boolean; messages: MessageView[] };
 
-/** A deliberately memory-only session: no credentials or bearer tokens in browser storage. */
+export type SessionOptions = {
+  rememberDevice?: boolean;
+  devicePassphrase?: string;
+};
+
+const cryptoLeases = new WeakMap<MatrixClient, ExclusiveLock>();
+
+/**
+ * Access tokens are always memory-only. The opt-in encrypted IndexedDB Rust
+ * crypto store uses a user-entered passphrase and a reused Matrix device ID.
+ * Metadata in localStorage contains only that public device ID, never tokens.
+ */
 export async function connect(
-  homeserver: string, username: string, password: string, changed: () => void
+  homeserver: string, username: string, password: string, changed: () => void,
+  options: SessionOptions = {},
 ): Promise<MatrixClient> {
   const baseUrl = normalizeHomeserver(homeserver);
-  const unauthenticated = createClient({ baseUrl });
-  const login = await unauthenticated.loginWithPassword(username, password);
-  if (!login.access_token || !login.user_id) throw new Error("Homeserver did not return a usable session.");
-  const client = createClient({
-    baseUrl, accessToken: login.access_token, userId: login.user_id,
-    deviceId: login.device_id,
-  });
-  // Abort the entire login if the audited upstream Rust-backed crypto cannot initialize.
-  // Never silently fall back to sending plaintext in encrypted conversations.
+  const rememberDevice = options.rememberDevice === true;
+  let scope: string | undefined;
+  let savedId: string | null = null;
+  let lease: ExclusiveLock | undefined;
+  let client: MatrixClient | undefined;
   try {
-    await client.initRustCrypto({ useIndexedDB: false });
+    if (rememberDevice) {
+      validateVaultPassphrase(options.devicePassphrase || "");
+      if (typeof indexedDB === "undefined" || !navigator.locks) {
+        throw new Error("Local encrypted crypto storage requires IndexedDB and Web Locks.");
+      }
+      scope = await persistentDeviceScope(baseUrl, username.trim());
+      savedId = readRememberedDevice(window.localStorage, scope);
+      // Do not open two Rust crypto clients against one IndexedDB at once.
+      lease = await acquireCryptoLease(storageKey(scope), navigator.locks);
+    }
+    const anonymous = createClient({ baseUrl });
+    const login = rememberDevice
+      ? await anonymous.loginRequest({
+        type: "m.login.password",
+        identifier: { type: "m.id.user", user: username.trim() },
+        password,
+        initial_device_display_name: "GoreeCloud Messenger web",
+        ...(savedId ? { device_id: savedId } : {}),
+      })
+      : await anonymous.loginWithPassword(username, password);
+    if (!login.access_token || !login.user_id || !login.device_id) {
+      throw new Error("Homeserver did not return a usable session.");
+    }
+    client = createClient({
+      baseUrl, accessToken: login.access_token, userId: login.user_id,
+      deviceId: login.device_id,
+    });
+    if (rememberDevice && (login.user_id !== username.trim() ||
+        (savedId !== null && savedId !== login.device_id))) {
+      throw new Error("The homeserver returned a different device identity.");
+    }
+    await client.initRustCrypto(rememberDevice
+      ? {
+        useIndexedDB: true,
+        cryptoDatabasePrefix: "goreecloud-messenger-v1-" + scope,
+        storagePassword: options.devicePassphrase,
+      }
+      : { useIndexedDB: false });
     if (!client.getCrypto()) throw new Error("Unable to initialize Matrix cryptography.");
     client.on(ClientEvent.Sync, changed);
     client.on(RoomEvent.Timeline, changed);
     await client.startClient({ initialSyncLimit: 50 });
+    // Commit the non-secret ID only after SDK crypto initialization succeeds.
+    if (rememberDevice && scope) {
+      storeRememberedDevice(window.localStorage, scope, login.device_id);
+      if (lease) cryptoLeases.set(client, lease);
+      lease = undefined;
+    }
     return client;
   } catch (error) {
-    // Do not keep an orphaned logged-in device if crypto initialization fails.
-    client.stopClient();
-    try { await client.logout(); } catch { /* credential stays memory-only */ }
+    client?.stopClient();
+    if (client) {
+      try { await client.logout(); } catch { /* no secrets in logs */ }
+    }
+    lease?.release();
     throw error;
   }
 }
@@ -82,5 +140,9 @@ export async function createPrivateEncryptedRoom(client: MatrixClient, name: str
 
 export async function leaveSession(client: MatrixClient): Promise<void> {
   client.stopClient();
-  try { await client.logout(); } catch { /* Token still disappears from app memory. */ }
+  try { await client.logout(); } catch { /* App access token is still discarded. */ }
+  finally {
+    cryptoLeases.get(client)?.release();
+    cryptoLeases.delete(client);
+  }
 }

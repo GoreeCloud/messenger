@@ -9,6 +9,8 @@ export default function App() {
   const [homeserver, setHomeserver] = useState("https://matrix.example.org");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(false);
+  const [devicePassphrase, setDevicePassphrase] = useState("");
   const [client, setClient] = useState<MatrixClient | null>(null);
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState("");
@@ -33,10 +35,19 @@ export default function App() {
   function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void perform(async () => {
-      const active = await connect(homeserver, username, password, () => setRevision(n => n + 1));
-      setClient(active);
-      setPassword("");
-      setNotice("Connected. Credentials and tokens are held only in memory.");
+      try {
+        const active = await connect(homeserver, username, password, () => setRevision(n => n + 1), {
+          rememberDevice, devicePassphrase,
+        });
+        setClient(active);
+        setNotice(rememberDevice
+          ? "Connected. Device keys are encrypted locally; enter the same passphrase on the next login. Access tokens remain memory-only."
+          : "Connected with an in-memory device. Keys from this session will not survive a restart.");
+      } finally {
+        // Password and crypto passphrase should not linger in React state.
+        setPassword("");
+        setDevicePassphrase("");
+      }
     });
   }
 
@@ -109,9 +120,25 @@ export default function App() {
               <input id="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="@you:example.org" autoComplete="username" required />
               <label htmlFor="password">Password</label>
               <input id="password" value={password} onChange={e => setPassword(e.target.value)} type="password" autoComplete="current-password" required />
+              <label className="persist-device-label" htmlFor="remember-device">
+                <input id="remember-device" type="checkbox" checked={rememberDevice}
+                  onChange={e => {setRememberDevice(e.target.checked); setDevicePassphrase("");}}/>
+                Keep encrypted device keys on this browser
+              </label>
+              {rememberDevice && <>
+                <label htmlFor="device-passphrase">Local encryption passphrase (20+ characters)</label>
+                <input id="device-passphrase" value={devicePassphrase}
+                  onChange={e => setDevicePassphrase(e.target.value)}
+                  type="password" autoComplete="new-password" minLength={20} maxLength={1024} required />
+                <p className="local-crypto-note">
+                  Your passphrase encrypts the Matrix crypto database and is never stored. The browser
+                  retains a device ID, but not a password or access token. A lost passphrase cannot be
+                  recovered here. Use only one tab at a time.
+                </p>
+              </>}
               <button type="submit" className="primary" disabled={busy}>{busy ? "Connecting…" : "Connect to Messenger"}</button>
             </form>
-            <p className="security-note"><span aria-hidden="true">◇</span> Your password is never saved by this app. This preview lacks device verification, encrypted backups and account recovery.</p>
+            <p className="security-note"><span aria-hidden="true">◇</span> Your login password is never saved. Optional local crypto storage is passphrase-encrypted; this preview still lacks verified device identities, remote key backup and account recovery.</p>
           </section>
         </main>
       ) : (
