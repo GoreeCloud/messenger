@@ -2,6 +2,8 @@ import { FormEvent, useMemo, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import { connect, createPrivateEncryptedRoom, leaveSession, listRooms } from "./matrix";
 import { validMatrixId } from "./config";
+import { reactEncrypted, safeMessage, sendEncryptedText } from "./security";
+import type { MessageView } from "./matrix";
 
 export default function App() {
   const [homeserver, setHomeserver] = useState("https://matrix.example.org");
@@ -11,6 +13,7 @@ export default function App() {
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState("");
+  const [replyingTo, setReplyingTo] = useState<MessageView | null>(null);
   const [roomName, setRoomName] = useState("");
   const [inviteId, setInviteId] = useState("");
   const [error, setError] = useState("");
@@ -23,7 +26,7 @@ export default function App() {
   async function perform(action: () => Promise<void>) {
     setBusy(true); setError(""); setNotice("");
     try { await action(); } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Operation failed.");
+      setError(safeMessage(cause));
     } finally { setBusy(false); }
   }
 
@@ -52,8 +55,8 @@ export default function App() {
     if (!client || !selected || !draft.trim()) return;
     if (!selected.encrypted) { setError("Sending to unencrypted rooms is disabled in this preview."); return; }
     void perform(async () => {
-      await client.sendTextMessage(selected.id, draft.trim());
-      setDraft(""); setRevision(n => n + 1);
+      await sendEncryptedText(client, selected.id, draft, replyingTo || undefined);
+      setDraft(""); setReplyingTo(null); setRevision(n => n + 1);
     });
   }
 
@@ -71,7 +74,7 @@ export default function App() {
     if (!client) return;
     void perform(async () => {
       await leaveSession(client);
-      setClient(null); setSelectedId(""); setDraft(""); setUsername("");
+      setClient(null); setSelectedId(""); setDraft(""); setReplyingTo(null); setUsername("");
       setNotice("Signed out; the local in-memory session was cleared.");
     });
   }
@@ -123,7 +126,7 @@ export default function App() {
             </form>
             <div className="room-list">
               {rooms.length === 0 ? <p className="muted empty">No rooms yet. Create your first encrypted conversation.</p> :
-                rooms.map(room => <button type="button" key={room.id} onClick={() => setSelectedId(room.id)}
+                rooms.map(room => <button type="button" key={room.id} onClick={() => { setSelectedId(room.id); setReplyingTo(null); }}
                   className={"room-item " + (selected?.id === room.id ? "selected" : "")}>
                   <span className="avatar" aria-hidden="true">{room.name.substring(0, 1).toUpperCase()}</span>
                   <span className="room-copy"><strong>{room.name}</strong><small>{room.encrypted ? "Encrypted room" : "Unencrypted room · view only"}</small></span>
@@ -140,8 +143,22 @@ export default function App() {
                     <article className={"message " + (message.sender === myId ? "mine" : "")} key={message.id}>
                       <small>{message.sender} · {new Date(message.timestamp).toLocaleString()}</small>
                       <p>{message.body}</p>
+                      {selected.encrypted && message.id.startsWith("$") && <div className="message-actions">
+                        <button type="button" className="message-action" onClick={() => setReplyingTo(message)}>Reply</button>
+                        {(["👍", "❤️", "🎉"] as const).map(emoji => <button type="button" key={emoji}
+                          className="message-action" disabled={busy} aria-label={"React with " + emoji}
+                          onClick={() => client && void perform(async () => {
+                            await reactEncrypted(client, selected.id, message.id, emoji);
+                            setNotice("Reaction sent to the encrypted room.");
+                          })}>{emoji}</button>)}
+                        {message.reactions.map(({emoji, count}) => <span className="reaction-pill" key={emoji}>{emoji} {count}</span>)}
+                      </div>}
                     </article>)}
               </div>
+              {replyingTo && <div className="reply-target" role="status">
+                <span>Replying to {replyingTo.sender}: {replyingTo.body.slice(0, 72)}</span>
+                <button type="button" className="quiet" onClick={() => setReplyingTo(null)}>Cancel reply</button>
+              </div>}
               <form className="composer" onSubmit={send}>
                 <label className="sr-only" htmlFor="message">Write a message</label>
                 <input id="message" value={draft} onChange={e => setDraft(e.target.value)} placeholder={selected.encrypted ? "Write a message…" : "Unencrypted sending is disabled"} disabled={busy || !selected.encrypted} maxLength={4000} />
