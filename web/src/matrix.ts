@@ -2,6 +2,7 @@ import { ClientEvent, createClient, EventType, MatrixClient, Preset, RoomEvent, 
 import { normalizeHomeserver } from "./config";
 import {
   acquireCryptoLease, persistentDeviceScope, readRememberedDevice, storeRememberedDevice,
+  cryptoDatabasePrefix, requireConsistentCryptoDatabases,
   storageKey, validateVaultPassphrase,
 } from "./deviceStore";
 import type { ExclusiveLock } from "./deviceStore";
@@ -34,13 +35,18 @@ export async function connect(
   try {
     if (rememberDevice) {
       validateVaultPassphrase(options.devicePassphrase || "");
-      if (typeof indexedDB === "undefined" || !navigator.locks) {
-        throw new Error("Local encrypted crypto storage requires IndexedDB and Web Locks.");
+      if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function" ||
+          !navigator.locks) {
+        throw new Error("Local encrypted crypto storage requires IndexedDB enumeration and Web Locks.");
       }
       scope = await persistentDeviceScope(baseUrl, username.trim());
       savedId = readRememberedDevice(window.localStorage, scope);
       // Do not open two Rust crypto clients against one IndexedDB at once.
       lease = await acquireCryptoLease(storageKey(scope), navigator.locks);
+      const existingDatabases = await indexedDB.databases();
+      requireConsistentCryptoDatabases(
+        scope, savedId, existingDatabases.map(db => db.name),
+      );
     }
     const anonymous = createClient({ baseUrl });
     const login = rememberDevice
@@ -66,7 +72,7 @@ export async function connect(
     await client.initRustCrypto(rememberDevice
       ? {
         useIndexedDB: true,
-        cryptoDatabasePrefix: "goreecloud-messenger-v1-" + scope,
+        cryptoDatabasePrefix: cryptoDatabasePrefix(scope!),
         storagePassword: options.devicePassphrase,
       }
       : { useIndexedDB: false });
