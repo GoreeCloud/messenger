@@ -63,6 +63,7 @@ private fun MessengerScreen() {
     var selected by remember { mutableStateOf<Conversation?>(null) }
     var messages by remember { mutableStateOf<List<TimelineEntry>>(emptyList()) }
     var draft by remember { mutableStateOf("") }
+    var replyTo by remember { mutableStateOf<TimelineEntry?>(null) }
     var roomName by remember { mutableStateOf("") }
     var inviteId by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
@@ -76,7 +77,7 @@ private fun MessengerScreen() {
     }
 
     fun openRoom(room: Conversation) {
-        selected = room; messages = emptyList(); draft = ""; error = ""
+        selected = room; messages = emptyList(); draft = ""; replyTo = null; error = ""
         scope.launch {
             try {
                 engine.openRoom(room.id) { snapshot ->
@@ -114,7 +115,7 @@ private fun MessengerScreen() {
                     try {
                         engine.logout()
                         connected = false; savedSession = false; orphanedDevice = false
-                        selected = null; rooms = emptyList(); messages = emptyList()
+                        selected = null; replyTo = null; rooms = emptyList(); messages = emptyList()
                         notice = "Local encrypted device removed. Key backup is not configured."
                     } catch (_: Exception) { error = "Could not completely remove device data. Do not reuse this device until local storage is cleared." }
                     finally { busy = false }
@@ -241,7 +242,7 @@ private fun MessengerScreen() {
             } else {
                 val room = selected!!
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { selected = null; messages = emptyList(); error = "" }) { Text("← Rooms") }
+                    TextButton(onClick = { selected = null; replyTo = null; messages = emptyList(); error = "" }) { Text("← Rooms") }
                     Column(Modifier.weight(1f)) {
                         Text(room.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
                         Text(if (room.encrypted) "Encrypted · identity not verified" else "Unencrypted · sending blocked",
@@ -270,6 +271,13 @@ private fun MessengerScreen() {
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
+                                        TextButton(
+                                            enabled = !busy,
+                                            onClick = { replyTo = msg },
+                                            modifier = Modifier.semantics {
+                                                contentDescription = "Reply to message from " + msg.sender
+                                            }
+                                        ) { Text("Reply") }
                                         ReactionPolicy.supportedEmoji.forEach { emoji ->
                                             val existing = msg.reactions.find { it.emoji == emoji }
                                             TextButton(
@@ -302,14 +310,31 @@ private fun MessengerScreen() {
                     }
                 }
                 if (room.encrypted) {
+                    if (replyTo != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Replying to " + replyTo!!.sender, style = MaterialTheme.typography.labelMedium, color = brand)
+                                Text(replyTo!!.body.take(120), style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            TextButton(onClick = { replyTo = null }) { Text("Cancel reply") }
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(draft, { draft = it }, label = { Text("Write an encrypted message") },
                             singleLine = true, modifier = Modifier.weight(1f))
                         Button(enabled = !busy && draft.isNotBlank(), onClick = {
                             busy = true; error = ""
                             scope.launch {
-                                try { engine.sendEncrypted(room.id, draft); draft = "" }
-                                catch (_: Exception) { error = "Encrypted sending failed. No plaintext fallback was attempted." }
+                                try {
+                                    val target = replyTo
+                                    if (target?.remoteEventId != null)
+                                        engine.sendEncryptedReply(room.id, target.remoteEventId, draft)
+                                    else engine.sendEncrypted(room.id, draft)
+                                    draft = ""; replyTo = null
+                                } catch (_: Exception) {
+                                    error = "Encrypted sending failed. No plaintext fallback was attempted."
+                                }
                                 finally { busy = false }
                             }
                         }) { Text("Send") }
