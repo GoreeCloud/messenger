@@ -4,6 +4,7 @@ import { acceptInvitation, connect, createPrivateEncryptedRoom, declineInvitatio
   listInvitations, listRooms } from "./matrix";
 import { validMatrixId } from "./config";
 import { filterLoadedMessages } from "./localSearch";
+import { eraseBrowserCryptoDevice } from "./eraseDevice";
 import { inviteEncryptedUser, reactEncrypted, safeMessage, sendEncryptedText } from "./security";
 import type { MessageView } from "./matrix";
 
@@ -12,6 +13,8 @@ export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberDevice, setRememberDevice] = useState(false);
+  const [eraseAccount, setEraseAccount] = useState("");
+  const [eraseAcknowledgment, setEraseAcknowledgment] = useState("");
   const [devicePassphrase, setDevicePassphrase] = useState("");
   const [client, setClient] = useState<MatrixClient | null>(null);
   const [revision, setRevision] = useState(0);
@@ -53,6 +56,25 @@ export default function App() {
       setNotice(rememberDevice
         ? "Connected. Device keys are encrypted locally; enter the same passphrase on the next login. Access tokens remain memory-only."
         : "Connected with an in-memory device. Keys from this session will not survive a restart.");
+    });
+  }
+
+  function eraseDevice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    // This action is available only while signed out. It is never tied
+    // to ordinary logout or to a browser session disappearing on reload.
+    if (client || eraseAcknowledgment !== "ERASE" || !validMatrixId(eraseAccount.trim())) return;
+    void perform(async () => {
+      await eraseBrowserCryptoDevice(
+        homeserver, eraseAccount, eraseAcknowledgment,
+        window.localStorage,
+        typeof indexedDB === "undefined" ? undefined : indexedDB,
+        navigator.locks,
+      );
+      setEraseAccount("");
+      setEraseAcknowledgment("");
+      setRememberDevice(false);
+      setNotice("The selected browser's stored encrypted device data was erased locally. This did not revoke any other server token. Old encrypted history may be permanently unreadable.");
     });
   }
 
@@ -147,6 +169,32 @@ export default function App() {
               <button type="submit" className="primary" disabled={busy}>{busy ? "Connecting…" : "Connect to Messenger"}</button>
             </form>
             <p className="security-note"><span aria-hidden="true">◇</span> Your login password is never saved. Optional local crypto storage is passphrase-encrypted; this preview still lacks verified device identities, remote key backup and account recovery.</p>
+            <details className="erase-device-panel">
+              <summary>Erase this browser's saved encrypted device</summary>
+              <p>
+                Irreversible: deletes this browser's local Matrix encryption keys for one account.
+                Without a verified key backup, old encrypted history may be lost forever.
+                This does not revoke server tokens or affect another browser or device.
+              </p>
+              <form onSubmit={eraseDevice}>
+                <label htmlFor="erase-account">Exact Matrix account ID</label>
+                <input id="erase-account" autoComplete="off" value={eraseAccount}
+                  onChange={e => setEraseAccount(e.target.value)}
+                  placeholder="@you:example.org" maxLength={255} required />
+                <label htmlFor="erase-acknowledgment">Type ERASE to confirm permanent local deletion</label>
+                <input id="erase-acknowledgment" autoComplete="off" spellCheck={false}
+                  value={eraseAcknowledgment} maxLength={5}
+                  onChange={e => setEraseAcknowledgment(e.target.value)} required />
+                <button type="submit" className="erase-device-button"
+                  disabled={busy || !validMatrixId(eraseAccount.trim()) || eraseAcknowledgment !== "ERASE"}>
+                  Permanently erase local encrypted device
+                </button>
+              </form>
+              <p className="local-crypto-note">
+                Close other Messenger tabs before erasing. The action only touches this account's
+                two known Matrix Rust SDK crypto databases and scoped device metadata.
+              </p>
+            </details>
           </section>
         </main>
       ) : (
