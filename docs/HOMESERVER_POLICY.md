@@ -69,3 +69,20 @@ configuration files. No production YAML, secret, signing key or PostgreSQL
 credential is ingested by these tests. The default CLI remains
 `--mode local`; production mode stays only a static config preflight,
 not production acceptance.
+
+
+## No implicit source build or mutable image pull
+
+The local Compose previews intentionally contain no `build:` section
+and set `pull_policy: never`. The regular development preview uses
+the reviewed immutable official Synapse 1.163.0 Linux/amd64 image
+digest; the source preview references only a separately built,
+locally tagged image. Neither Compose file may quietly pull a mutable
+registry tag or execute the vendor Dockerfile via Compose.
+
+Static checks audit both fields and the expected official/source
+image identifiers. The source-image build script requires explicit
+upstream-risk acknowledgment. These controls do not yet establish
+a reproducible or secure source-built image: the upstream Dockerfile
+still contains mutable bases, a remote installer and a floating Rust
+toolchain, which remain release blockers.

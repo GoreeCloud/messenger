@@ -2,10 +2,11 @@
 name: goreecloud-messenger-source-preview
 services:
   synapse:
-    build:
-      context: ../third_party/synapse
-      dockerfile: docker/Dockerfile
+    # Build this image ONLY through the audited, explicitly acknowledged
+    # deploy/build_source.sh entrypoint; Compose must never invoke the
+    # upstream Dockerfile directly, as it has known supply-chain risks.
     image: goreecloud-messenger/synapse:1.163.0-source-local
+    pull_policy: never
     restart: "no"
     environment:
       SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
