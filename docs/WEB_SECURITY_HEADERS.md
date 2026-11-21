@@ -47,3 +47,13 @@ Caddy documentation:
 https://caddyserver.com/docs/caddyfile/directives/header
 https://caddyserver.com/docs/caddyfile/directives/file_server
 https://caddyserver.com/docs/caddyfile/directives/try_files
+
+## Isolated Caddy parser result
+
+A semantically matching copy of this Caddy static-header configuration was
+accepted by the cached Caddy 2 image's `caddy adapt` command inside an
+ephemeral, network-disabled, read-only Docker container with no production
+mounts or exposed ports. It emitted a formatting warning, not a parser error.
+The temporary test file and parser output were cleaned up after validation.
+No live reverse-proxy configuration, app deployment or public DNS was changed.
+This is syntax evidence only, not browser CSP/TLS acceptance.
