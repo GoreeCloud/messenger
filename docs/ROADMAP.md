@@ -58,3 +58,9 @@ This is a priority plan, not a release claim.
 - [ ] Run the manual GitHub-hosted disposable Android 35 emulator workflow and
   verify all synthetic Keystore/Compose instrumentation checks on the
   source-pinned GoreeCloud UI theme. Compile-only CI is not device acceptance.
+
+- [x] Expose read-only Android Rust SDK own-identity, recovery and backup
+  states with an explicit warning that peer trust and successful encrypted
+  key restoration have not been verified.
+- [ ] Complete independent SDK-assisted cross-signing, backup enrollment,
+  recovery-key UX and a real two-device recovery roundtrip.
