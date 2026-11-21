@@ -80,3 +80,10 @@ It requires an isolated TLS homeserver and two disposable test accounts, never
 runs in public CI, and does not save credentials or encrypted keys. See
 [docs/E2EE_TESTING.md](docs/E2EE_TESTING.md) for prerequisites, limitations and
 remaining cross-platform, device-trust and key-recovery acceptance gates.
+
+## Offline backup input checking
+
+An offline, non-destructive integrity validator for operator-prepared
+PostgreSQL snapshots and optional media bundles is documented at
+[Synapse restore rehearsal](docs/SNAPSHOT_RESTORE_REHEARSAL.md).
+It does not execute PostgreSQL restore or prove a recoverable deployment.
