@@ -14,6 +14,13 @@ test -n "$RUNNER_TEMP" && test -d "$RUNNER_TEMP" || {
   echo "BLOCKED: required ephemeral runner workspace is unavailable." >&2; exit 2;
 }
 
+# Before pulling or starting containers, verify native Node24 can resolve
+# the actual Matrix Rust-crypto TS modules (Vite can mask ESM import errors).
+if ! node web/scripts/e2ee-smoke.mjs --help >/dev/null 2>&1; then
+  echo "BLOCKED: native Node E2EE harness modules cannot be imported." >&2
+  exit 2
+fi
+
 image="matrixdotorg/synapse@sha256:08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6"
 container="gc-e2ee-synapse-$GITHUB_RUN_ID"
 workspace="$(mktemp -d "$RUNNER_TEMP/gc-e2ee-XXXXXXXX")"
