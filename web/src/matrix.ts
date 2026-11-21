@@ -132,8 +132,12 @@ export function listRooms(client: MatrixClient): RoomView[] {
 }
 
 export async function createPrivateEncryptedRoom(client: MatrixClient, name: string): Promise<string> {
+  const title = name.trim();
+  if (title.length < 1 || title.length > 90) {
+    throw new Error("Room name must be 1–90 characters.");
+  }
   const result = await client.createRoom({
-    name: name.trim(),
+    name: title,
     preset: Preset.PrivateChat, visibility: Visibility.Private,
     initial_state: [{
       type: EventType.RoomEncryption,
