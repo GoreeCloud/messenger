@@ -22,7 +22,14 @@ and local erasure errors never reported as success. They use only synthetic
 injected callbacks; they do not contact a homeserver or erase physical
 user data. No non-test Android Keystore alias is used in these tests.
 
-Caveat: the native SDK network logout is not guaranteed to finish quickly
-when unreachable. A timeout and retry-safe token revocation mechanism
-requires separate SDK lifecycle acceptance. This change does not claim
-a bounded server logout in the Android implementation.
+The SDK revocation attempt now has a best-effort **eight-second coroutine
+timeout**. A remote timeout or network error is reported as **unconfirmed
+server revocation**, and confirmed local erase always runs under
+`NonCancellable` even if its calling coroutine is cancelled. Destructive
+local deletion errors still propagate instead of being shown as success.
+
+Caveat: a native/FFI network call that blocks without a cancellable
+suspension point may not honor a coroutine timeout promptly. This is
+**not** independently verified as an eight-second wall-clock guarantee
+against a real unreachable Matrix homeserver. Dedicated real SDK lifecycle
+tests and remote device/token revocation remain release blockers.
