@@ -18,7 +18,7 @@
 4. Browser XSS, malicious extensions, compromised endpoints or malicious participants can bypass plaintext confidentiality.
 5. Matrix and federation reveal metadata; bridging networks additionally breaks some end-to-end trust assumptions.
 6. No media encryption, background sync, resilient offline queues, authenticated notifications or anti-abuse controls have been verified.
-7. Four synthetic Android Keystore tests have passed on a real phone; end-to-end login/restoration, encrypted network interoperability, load, security penetration, disaster recovery and backup restoration have NOT been verified.
+7. Nine synthetic Android instrumentation checks (six Keystore-vault and three Compose onboarding) passed on a real phone before the latest theme change; end-to-end login/restoration, encrypted network interoperability, accessibility, load, security penetration and complete Synapse disaster recovery have NOT been verified.
 8. Homeserver registration policy, TLS, federation, storage, key management, monitoring and rate limits require separate acceptance.
 
 ### Stable acceptance gates
@@ -43,3 +43,39 @@ allowlist**, not prefix matching. Prefix-matching arbitrary upstream errors
 could reveal attacker-supplied identifiers or bearer credentials inside the
 UI; new unit tests deliberately inject lookalike malicious error strings.
 This does not remove the need for strict logging/CSP/XSS review.
+
+## Further verified boundaries
+
+Both clients now offer explicit incoming invitation Join/Decline controls,
+never auto-join a room, and never treat an invitation as proof of trusted
+E2EE. They search only already loaded messages locally, without forwarding
+search terms to a separate service. The browser validates invitation,
+reply, and reaction mutations against room encryption and expected IDs.
+Its encrypted-room timeline also refuses server-injected plaintext
+message/reaction envelopes that merely resemble decrypted E2EE events.
+
+The official GoreeCloud UI source-pinned web tokens and Android Expressive
+theme are presentation foundations, not security or privacy mechanisms.
+The browser CSP Caddy example is deliberately report-only and nondeployed.
+
+On an authorized VPS a disposable, non-networked PostgreSQL database with
+invented rows was backed up and restored successfully. **No real Synapse
+database, homeserver signing key, media or Matrix E2EE backup was restored**.
+Real-world key recovery and verified cross-device E2EE remain release blockers.
+
+## Native event provenance constraint
+
+The current Matrix Rust Android FFI `EventTimelineItem.eventTypeRaw`
+corresponds to its timeline **content event type**, not necessarily the
+original encrypted event wire envelope. Source inspection shows it is
+derived from `item.content().event_type_str()` in the Rust FFI timeline
+conversion. It therefore cannot alone establish whether a room message
+arrived as `m.room.encrypted` or was injected as plaintext by an
+untrusted homeserver.
+
+Do not add a misleading Android `eventTypeRaw == "m.room.encrypted"`
+check: that would confuse content and wire event types and could hide
+legitimate decrypted messages without supplying a security guarantee.
+Until trustworthy SDK provenance is exposed and real adversarial testing
+passes, Android messages should continue to state that remote device
+identity is **not verified**, and this limitation remains a release risk.

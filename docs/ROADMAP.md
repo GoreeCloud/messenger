@@ -10,9 +10,9 @@ This is a priority plan, not a release claim.
 - [x] Android local debug build and unit policy checks (not network/device acceptance).
 - [x] Native Android room timeline pagination with stale-callback suppression.
 - [x] Encrypted local SQLite key and Matrix session persistence using Android Keystore.
-- [x] Four isolated Android Keystore/device-vault tests passed on an actual device.
+- [x] Six vault tests and three Compose onboarding tests passed on an actual OnePlus Android device, before the latest source-pinned GC UI theme migration.
 - [ ] Verify real Android login/restore after process death and failed/offline server refresh.
-- [x] Adopt verified GoreeCloud UI alpha color roles for current preview.
+- [x] Source-pin the official GoreeCloud UI alpha design tokens for web and the Android Material 3 Expressive theme, with SHA-256 verification in protected CI.
 - [x] Integrate pinned native Kotlin Matrix Rust SDK bindings and compile with upstream crypto.
 - [ ] Independently verify encrypted two-account, two-device send/receive and device trust.
 - [ ] Device cross-signing, key verification and secure backup/recovery.
@@ -22,6 +22,8 @@ This is a priority plan, not a release claim.
 ## Messaging features
 - [ ] Media, voice notes, encrypted attachments, message editing and threads.
 - [x] Web emoji reaction and reply source; Android has SDK-backed encrypted-room emoji reactions and replies.
+- [x] Explicit incoming Matrix room invitation Join/Decline actions on both clients; no auto-join or unverified encryption claim.
+- [x] Local-only case-insensitive search of already loaded messages on web and Android; no message indexing service.
 - [ ] Test encrypted reactions across two real devices against a trusted test Matrix homeserver.
 - [ ] Encrypted groups, roles and moderation.
 - [ ] Voice/video using reviewed MatrixRTC, TURN and LiveKit.
@@ -39,8 +41,11 @@ This is a priority plan, not a release claim.
 
 ## Stable release gates
 - [ ] Source-built and hardened Synapse with Postgres and trusted TLS.
+- [x] An isolated PostgreSQL custom-format backup and restore of synthetic rows succeeded; the complete Synapse database/media/key restore remains unverified.
+- [ ] Demonstrate Android and web ciphertext-envelope provenance under an adversarial homeserver; web has an envelope display gate, Android SDK binding provenance requires further verification.
+- [ ] Prove real Matrix Rust SDK logout timeout, session/device revocation, and keystore preservation under process death; coroutine-only timeout tests do not guarantee native FFI interruption.
 - [ ] Authenticated, verified two-device E2EE and recovery tests.
 - [ ] Security assessment, dependencies and license auditing, SBOM.
-- [ ] Native Android device QA, signed build and accessibility review.
+- [ ] Native Android device QA, signed build and accessibility review (nine synthetic connected-device checks passed previously; current theme/invitation screens have not been accepted on hardware).
 - [ ] Production backup, restore, monitoring, rollback and migration drills.
 - [ ] Verified branch protection, CI and sole-maintainer PR workflow.

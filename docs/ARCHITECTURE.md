@@ -24,3 +24,22 @@ Synapse source v1.163.0 is pinned and retained in third_party/synapse. The Compo
 Bridges to Telegram, WhatsApp and Signal are not enabled: cross-network bridging changes privacy and encryption guarantees and must require informed opt-in. MatrixRTC with TURN/LiveKit is a future calling option, not implemented.
 
 The five mandatory GoreeCloud systems remain separate: GoreeCloud UI (visual design), GoreeShield (privacy), Wardveil (cybersecurity), GoreeCloud Mesh (integration), GoreeCloud Identity (authentication/authorization). Current GC UI palette adoption is not proof that any other integration is operational.
+
+## Verified presentation and local privacy boundaries
+
+Both clients expose explicit invitation decisions and device-local text/sender
+search limited to loaded room messages. Search terms are never sent to a
+separate search service. An invited room does not imply verified encryption:
+after an explicit Join, the existing crypto and membership gates continue
+to block plaintext sending.
+
+The source-pinned first-party GoreeCloud UI adapter supplies generated web
+semantic CSS tokens and native Material 3 Expressive Compose palettes, shapes
+and motion. Android uses system appearance; web deliberately retains Iris/dark
+in the preview. Neither a design source pin nor build success establishes
+physical-device visual and accessibility acceptance.
+
+The manual live E2EE acceptance workflow is gated by an explicit
+disposable-account acknowledgment and a protected-branch-only GitHub
+environment. The environment currently has no test secrets, and no live
+cross-device E2EE roundtrip has been verified.
