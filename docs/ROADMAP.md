@@ -64,3 +64,9 @@ This is a priority plan, not a release claim.
   key restoration have not been verified.
 - [ ] Complete independent SDK-assisted cross-signing, backup enrollment,
   recovery-key UX and a real two-device recovery roundtrip.
+
+- [ ] Implement and verify genuinely encrypted browser reaction semantics
+  before restoring emoji action buttons. The pinned Matrix JS SDK 45.1.0
+  deliberately bypasses reaction encryption, so web reaction sends are
+  blocked rather than leaking emoji in plaintext. Separately verify
+  Android Rust timeline reaction wire confidentiality.

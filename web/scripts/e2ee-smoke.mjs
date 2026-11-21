@@ -9,7 +9,7 @@ import { EventType, Preset, Visibility, createClient } from "matrix-js-sdk";
 import { readTestEnvironment, requiredNames } from "./e2ee-config.mjs";
 import { requireEncryptedRoom, sendEncryptedText, reactEncrypted } from "../src/security.ts";
 import {
-  findEncryptedEvent, isEncryptedReaction, isEncryptedReply,
+  findEncryptedEvent, isEncryptedReply,
 } from "./e2ee-observations.mjs";
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -133,19 +133,24 @@ async function main() {
       EventType.RoomMessage, second.getUserId(),
       content => isEncryptedReply(content, eventId, responseNonce),
     )), env.timeoutMs, "sender decrypted ciphertext reply with original relation");
-    await bounded(reactEncrypted(second, roomId, eventId, "👍"),
-      env.timeoutMs, "encrypted reaction");
-    await until(() => Boolean(findEncryptedEvent(
-      first.getRoom(roomId)?.getLiveTimeline().getEvents(),
-      EventType.Reaction, second.getUserId(),
-      content => isEncryptedReaction(content, eventId, "👍"),
-    )), env.timeoutMs, "sender decrypted ciphertext reaction relation");
+    // The pinned JS SDK explicitly excludes m.reaction from encryption.
+    // Test that the app refuses this plaintext privacy downgrade, rather
+    // than waiting for an encrypted reaction that it cannot produce.
+    let reactionBlocked = false;
+    try { await reactEncrypted(second, roomId, eventId, "👍"); }
+    catch (error) {
+      reactionBlocked = error instanceof Error &&
+        error.message === "Encrypted reactions are unavailable with this Matrix SDK.";
+    }
+    if (!reactionBlocked) {
+      throw new Error("SDK reaction downgrade was not blocked.");
+    }
     let blocked = false;
     try { await sendEncryptedText(first, "!missing:invalid.example", nonce); }
     catch { blocked = true; }
     if (!blocked) throw new Error("Plaintext downgrade gate unexpectedly allowed sending.");
-    console.log("PASS: actual encrypted wire envelopes, two-user decryption, reply relation, reaction, and missing-room downgrade prevention.");
-    console.log("Not covered: trusted identities, cross-signing, key recovery or Android devices.");
+    console.log("PASS: encrypted wire envelopes, two-user decryption, encrypted reply, reaction plaintext downgrade refusal, and missing-room downgrade prevention.");
+    console.log("Not covered: encrypted emoji reactions, trusted identities, cross-signing, key recovery or Android devices.");
   } catch {
     // Never print upstream error strings; providers may put tokens or payloads there.
     console.error("FAIL: round trip incomplete. Debug only with disposable data and redacted logs.");
