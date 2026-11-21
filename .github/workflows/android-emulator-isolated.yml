@@ -1,0 +1,76 @@
+name: Messenger isolated Android emulator acceptance (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      disposable_emulator_ack:
+        description: "Type YES to run synthetic Android Keystore and onboarding checks on a disposable GitHub-hosted emulator"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  authorization-gate:
+    name: disposable-android-authorization-gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require protected main and explicit synthetic-only acknowledgment
+        shell: bash
+        env:
+          ACKNOWLEDGE: ${{ inputs.disposable_emulator_ack }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" || "$ACKNOWLEDGE" != "YES" ]]; then
+            echo "BLOCKED: protected main and disposable synthetic-only authorization required." >&2
+            exit 2
+          fi
+
+  connected-android-instrumentation:
+    name: disposable-android-keystore-compose-instrumentation
+    needs: authorization-gate
+    runs-on: ubuntu-24.04
+    environment: messenger-android-emulator
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify official GoreeCloud UI source and Android wrapper pins
+        run: |
+          python3 ci/check_gc_ui_source.py
+          python3 ci/check_android_wrapper.py
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          packages: "platform-tools platforms;android-37.0 build-tools;36.0.0"
+      - name: Allow hardware acceleration on this disposable GitHub runner only
+        shell: bash
+        run: |
+          if [[ "$GITHUB_ACTIONS" != "true" || "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "BLOCKED: not an authorized disposable GitHub main runner." >&2
+            exit 2
+          fi
+          if [[ -e /dev/kvm ]]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+              sudo tee /etc/udev/rules.d/99-gc-android-ephemeral-kvm.rules >/dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+      - name: Verify isolated Keystore and Compose onboarding on Android emulator
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2 reviewed
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          cores: 2
+          ram-size: 2048M
+          disk-size: 4G
+          disable-animations: true
+          emulator-boot-timeout: 600
+          working-directory: android
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --max-workers=2 --console=plain
