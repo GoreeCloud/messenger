@@ -1,5 +1,6 @@
 import { ClientEvent, createClient, EventType, MatrixClient, Preset, RoomEvent, Visibility } from "matrix-js-sdk";
 import { normalizeHomeserver } from "./config";
+import { canDisplayReaction, displayEventBody } from "./eventPresentation";
 import {
   acquireCryptoLease, persistentDeviceScope, readRememberedDevice, storeRememberedDevice,
   cryptoDatabasePrefix, requireConsistentCryptoDatabases,
@@ -104,7 +105,8 @@ export function listRooms(client: MatrixClient): RoomView[] {
       const encrypted = room.hasEncryptionStateEvent();
       const timeline = room.getLiveTimeline().getEvents();
       const reactionCounts = new Map<string, Map<string, number>>();
-      for (const event of timeline.filter(event => event.getType() === EventType.Reaction)) {
+      for (const event of timeline.filter(event =>
+        event.getType() === EventType.Reaction && canDisplayReaction(event, encrypted))) {
         const relation = event.getContent()["m.relates_to"] as
           | { rel_type?: unknown; event_id?: unknown; key?: unknown } | undefined;
         if (relation?.rel_type !== "m.annotation" || typeof relation.event_id !== "string" ||
@@ -117,9 +119,7 @@ export function listRooms(client: MatrixClient): RoomView[] {
         .filter(event => event.getType() === EventType.RoomMessage)
         .map(event => {
           const id = event.getId() || "";
-          const body = event.isDecryptionFailure()
-            ? "Encrypted message unavailable — check device keys."
-            : String(event.getContent().body || "[Unsupported message]");
+          const body = displayEventBody(event, encrypted);
           return {
             id, body, sender: event.getSender() || "Unknown sender",
             timestamp: event.getTs(),
