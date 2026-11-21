@@ -25,6 +25,11 @@ export function validRemoteEventId(value: string): boolean {
 export async function inviteEncryptedUser(
   client: MatrixClient, roomId: string, userId: string,
 ): Promise<void> {
+  // Control characters must be rejected before trim removes trailing tabs
+  // or newlines from attacker-controlled recipient IDs.
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(userId)) {
+    throw new Error("Enter a valid Matrix user ID.");
+  }
   const id = userId.trim();
   if (!validMatrixId(id)) throw new Error("Enter a valid Matrix user ID.");
   await requireEncryptedRoom(client, roomId);
