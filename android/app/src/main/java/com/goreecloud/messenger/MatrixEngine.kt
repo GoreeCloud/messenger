@@ -285,16 +285,21 @@ class MatrixEngine(context: Context) : AutoCloseable {
         room.inviteUserById(userId)
     }
 
-    suspend fun logout() = withContext(Dispatchers.IO) {
+    /** Local device removal is unconditional; server token revocation is not. */
+    suspend fun logout(): Boolean = withContext(Dispatchers.IO) {
         val active = client
-        try { if (active != null) active.logout() }
-        catch (_: Exception) { /* Server-side revocation may be unavailable offline. */ }
-        finally {
-            close()
-            // Explicit sign-out deletes device keys. A device without trusted
-            // server-side key backup may lose old encrypted history forever.
-            vault.forget()
-        }
+        revokeAndForget(
+            revoke = {
+                requireNotNull(active) { "No online Matrix session to revoke." }
+                active.logout()
+            },
+            forget = {
+                close()
+                // Explicit local sign-out destroys old encrypted history
+                // unless an independently verified key backup exists.
+                vault.forget()
+            },
+        )
     }
 
     override fun close() {
@@ -334,4 +339,25 @@ internal fun applyTimelineDiff(items: MutableList<TimelineItem>, diffs: List<Tim
             is TimelineDiff.Reset -> { items.clear(); items.addAll(diff.values) }
         }
     }
+}
+
+/**
+ * Distinguish verified remote logout from local-only key erasure.
+ * Independently testable without a running Matrix server or native FFI.
+ */
+internal suspend fun revokeAndForget(
+    revoke: suspend () -> Unit,
+    forget: () -> Unit,
+): Boolean {
+    var serverRevoked = false
+    try {
+        revoke()
+        serverRevoked = true
+    } catch (_: Exception) {
+        // Do not report remote token revocation or log SDK response contents.
+    } finally {
+        // The user explicitly chose irreversible local device erasure.
+        forget()
+    }
+    return serverRevoked
 }
