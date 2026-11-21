@@ -49,8 +49,8 @@ This does not remove the need for strict logging/CSP/XSS review.
 Both clients now offer explicit incoming invitation Join/Decline controls,
 never auto-join a room, and never treat an invitation as proof of trusted
 E2EE. They search only already loaded messages locally, without forwarding
-search terms to a separate service. The browser validates invitation,
-reply, and reaction mutations against room encryption and expected IDs.
+search terms to a separate service. The browser validates invitation and reply mutations against room encryption and expected IDs.
+Reactions are blocked because the reviewed SDK reaction transport exempts m.reaction from encryption.
 Its encrypted-room timeline also refuses server-injected plaintext
 message/reaction envelopes that merely resemble decrypted E2EE events.
 

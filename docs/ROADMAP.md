@@ -21,10 +21,10 @@ This is a priority plan, not a release claim.
 
 ## Messaging features
 - [ ] Media, voice notes, encrypted attachments, message editing and threads.
-- [x] Web emoji reaction and reply source; Android has SDK-backed encrypted-room emoji reactions and replies.
+- [x] Encrypted text and reply source on both platforms. Emoji reaction sends are now disabled pending proof of encrypted SDK transport.
 - [x] Explicit incoming Matrix room invitation Join/Decline actions on both clients; no auto-join or unverified encryption claim.
 - [x] Local-only case-insensitive search of already loaded messages on web and Android; no message indexing service.
-- [ ] Test encrypted reactions across two real devices against a trusted test Matrix homeserver.
+- [ ] Implement verified interoperable encrypted emoji reactions and test ciphertext wire envelopes across two real clients; current SDK reaction exception requires fail-closed behavior.
 - [ ] Encrypted groups, roles and moderation.
 - [ ] Voice/video using reviewed MatrixRTC, TURN and LiveKit.
 - [ ] Opt-in push and GoreeCloud Notify integration.
