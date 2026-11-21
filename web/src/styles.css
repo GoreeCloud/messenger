@@ -97,3 +97,10 @@ button.bordered{border:1px solid var(--outline);width:100%}
 .persist-device-label{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:.88rem;font-weight:600}
 .persist-device-label input[type="checkbox"]{width:18px;height:18px;min-height:18px;accent-color:var(--brand)}
 .local-crypto-note{font-size:.78rem;line-height:1.5;color:var(--soft);max-width:42ch;margin-top:0}
+
+/* Keyboard focus remains clearly visible on web and small-screen controls.
+   Uses the existing verified GoreeCloud brand color token. */
+:where(button, input, a, textarea, select):focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 3px;
+}
