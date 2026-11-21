@@ -67,3 +67,13 @@ devices/rooms, which cannot be guaranteed after partial server failures.
 Device trust/cross-signing, secret backup/recovery, Android-to-web
 interoperability, durable crypto state across reload, replays, performance,
 and production readiness are not established by this browser-only harness.
+
+## Explicit destructive-test acknowledgement
+
+In addition to the two test accounts, explicitly set
+MATRIX_TEST_DISPOSABLE_ACK=YES after confirming that the configured homeserver
+is a disposable, authorized HTTPS test environment and the user IDs are not
+production/personal accounts. The harness exits before any login request
+if this acknowledgement is absent or invalid. Creating and leaving Matrix
+rooms leaves historical events on the homeserver even after logout.
+Passing an opt-in flag is **not** security approval or proof of isolation.
