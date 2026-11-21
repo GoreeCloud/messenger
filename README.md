@@ -17,7 +17,7 @@ GoreeCloud Messenger is an open-source Matrix-compatible messaging project with 
 | Search already loaded messages | Local sender/text filtering; no search endpoint | Local sender/text filtering; no search endpoint |
 | Local encrypted crypto persistence | Memory-only by default; opt-in passphrase-protected IndexedDB | Non-exportable Android Keystore wraps local SQLite/session |
 | Send messages | Only in encrypted rooms | Only in encrypted rooms, via Matrix Rust SDK |
-| Emoji reactions | Encrypted room only | Encrypted room only, pending interoperability |
+| Emoji reactions | Temporarily disabled: SDK sends reaction metadata unencrypted | Temporarily disabled: SDK reaction encryption not verified |
 | Replies to existing messages | Encrypted room only | Encrypted room only, pending interoperability |
 | Native device verification and recovery | Not yet | Not yet |
 | Voice/video, media, push, moderation | Planned | Planned |
@@ -125,7 +125,7 @@ data and remote homeserver tokens are unaffected. See
 An additional, **explicitly acknowledged** GitHub-hosted workflow can
 provision a disposable Synapse test image and two temporary accounts,
 terminate locally trusted TLS on loopback, and exercise real encrypted
-wire/decryption, reply, reaction and downgrade checks. It never uses a
+wire/decryption, encrypted reply and reaction downgrade-refusal checks. It never uses a
 production account, GoreeCloud VPS endpoint, personal credentials or user
 content. See [disposable E2EE acceptance](docs/DISPOSABLE_E2EE_ACCEPTANCE.md).
 
