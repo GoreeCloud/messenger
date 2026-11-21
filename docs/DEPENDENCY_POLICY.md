@@ -30,3 +30,18 @@ reproducible server image remain outstanding.
 No external scanner should be installed/executed without inspecting its
 source, permissions, inputs, outputs and dependencies. Do not run arbitrary
 untrusted PR code with repository write credentials or production secrets.
+
+## GitHub Actions syntax preflight
+
+Required backend CI parses **all** repository workflow YAML files with
+Ubuntu's preinstalled Ruby/Psych `YAML.parse_file` before running other
+source and policy checks. It parses an AST only and does not execute
+workflow expressions or deserialize arbitrary YAML objects.
+
+This catches malformed YAML caused by a plain `run:` scalar containing
+an unquoted colon-space sequence such as `--only-binary=:all: PyYAML`.
+Use the YAML literal block form `run: |` for commands with colon
+arguments. Offline negative regression tests verify parser rejection.
+The guard is not a complete GitHub Actions schema validator; required
+web, Android, and backend checks and protected GitHub rules remain
+independent acceptance gates.
