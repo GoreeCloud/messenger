@@ -22,32 +22,49 @@ class SnapshotError(ValueError):
     pass
 
 
-def _regular_file(path: Path) -> int:
+def _safe_read(path: Path):
+    """Open a regular file via one FD, refusing symlink swaps at open-time."""
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise SnapshotError("This platform cannot reject snapshot symlinks safely.")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
     try:
-        mode = path.lstat().st_mode
+        fd = os.open(path, flags)
     except OSError as exc:
-        raise SnapshotError("Missing or unreadable snapshot entry.") from exc
-    if not stat.S_ISREG(mode):
-        raise SnapshotError("Snapshot entries must be regular files, not links or devices.")
-    return path.stat().st_size
+        raise SnapshotError("Snapshot entry cannot be safely opened.") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise SnapshotError("Snapshot entries must be regular files, not links or devices.")
+        handle = os.fdopen(fd, "rb")
+        fd = -1  # Ownership transferred to the file context manager.
+        return handle
+    finally:
+        if fd >= 0:
+            os.close(fd)
 
 
-def _file_sha256(path: Path) -> str:
+def _file_sha256(path: Path) -> tuple[int, str]:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with _safe_read(path) as handle:
+        size = os.fstat(handle.fileno()).st_size
+        if size < 1 or size > _MAX_FILE_BYTES:
+            raise SnapshotError("Snapshot entry size is unsupported.")
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest()
+    return size, digest.hexdigest()
 
 
 def verify_snapshot(directory: Path) -> tuple[str, ...]:
     if directory.is_symlink() or not directory.is_dir():
         raise SnapshotError("Snapshot directory must exist and cannot be a symlink.")
     manifest_path = directory / "manifest.json"
-    if _regular_file(manifest_path) > _MAX_MANIFEST_BYTES:
-        raise SnapshotError("Snapshot manifest is oversized.")
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        with _safe_read(manifest_path) as handle:
+            if os.fstat(handle.fileno()).st_size > _MAX_MANIFEST_BYTES:
+                raise SnapshotError("Snapshot manifest is oversized.")
+            payload = handle.read(_MAX_MANIFEST_BYTES + 1)
+        if len(payload) > _MAX_MANIFEST_BYTES:
+            raise SnapshotError("Snapshot manifest is oversized.")
+        manifest = json.loads(payload.decode("utf-8"))
     except (ValueError, UnicodeError, OSError) as exc:
         raise SnapshotError("Malformed snapshot manifest.") from exc
     if not isinstance(manifest, dict) or set(manifest) != {"version", "files"} or manifest.get("version") != 1:
@@ -67,7 +84,8 @@ def verify_snapshot(directory: Path) -> tuple[str, ...]:
         if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise SnapshotError("Invalid snapshot SHA-256 digest.")
         candidate = directory / name
-        if _regular_file(candidate) != size or _file_sha256(candidate) != digest:
+        actual_size, actual_digest = _file_sha256(candidate)
+        if actual_size != size or actual_digest != digest:
             raise SnapshotError("Snapshot entry failed size or SHA-256 verification.")
         present.add(name)
     if "database.dump" not in present:
@@ -90,7 +108,7 @@ def copy_to_empty_rehearsal(directory: Path, dest: Path) -> tuple[str, ...]:
         dest.mkdir(mode=0o700)
         for name in (*names, "manifest.json"):
             source = directory / name
-            with source.open("rb") as src, (dest / name).open("xb") as target:
+            with _safe_read(source) as src, (dest / name).open("xb") as target:
                 shutil.copyfileobj(src, target, length=1024 * 1024)
             os.chmod(dest / name, 0o600)
         if verify_snapshot(dest) != names:

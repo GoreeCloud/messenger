@@ -72,3 +72,18 @@ Tests in deploy/tests create only fabricated, non-database bytes. Their
 passing result proves safe offline validation and protected scratch-copy
 handling, **not** a PostgreSQL data restore, E2EE key recovery, database
 consistency, or production disaster recovery.
+
+## File-descriptor verification
+
+The offline verifier opens each input and its manifest through a regular-file
+file descriptor using no-follow semantics. Size and hash are checked against
+the **same opened descriptor**, and copying reopens via no-follow (then
+rechecks the copied bytes). This closes the former check-then-open leaf
+symlink substitution window. Synthetic tests exercise symlink substitution
+*after* an initial successful integrity pass.
+
+This is still not a complete defense against an attacker able to replace
+the entire parent directory, modify bytes concurrently or control the
+underlying filesystem. Keep snapshot roots and scratch parents private,
+owned by a trusted account, and on reliable encrypted storage. No production
+backup has been ingested or restored by this project.

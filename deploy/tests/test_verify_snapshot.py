@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from verify_snapshot import SnapshotError, verify_snapshot, copy_to_empty_rehearsal
@@ -97,6 +98,31 @@ class SnapshotRehearsalTests(unittest.TestCase):
         with self.assertRaises(SnapshotError):
             copy_to_empty_rehearsal(self.snapshot, dest)
         self.assertEqual(marker.read_text(), "preserve")
+
+    def test_rejects_source_symlink_swapped_between_verify_and_copy(self):
+        original_verify = verify_snapshot
+        switched = False
+
+        def swap_after_first_verify(directory):
+            nonlocal switched
+            verified = original_verify(directory)
+            if not switched:
+                switched = True
+                self.db.unlink()
+                self.db.symlink_to(self.parent / "outside-secret")
+            return verified
+
+        with patch("verify_snapshot.verify_snapshot", side_effect=swap_after_first_verify):
+            with self.assertRaises(SnapshotError):
+                copy_to_empty_rehearsal(self.snapshot, self.parent / "scratch")
+        self.assertTrue(switched)
+
+    def test_rejects_symlink_manifest_before_decode(self):
+        manifest = self.snapshot / "manifest.json"
+        manifest.unlink()
+        manifest.symlink_to(self.parent / "outside-manifest")
+        with self.assertRaises(SnapshotError):
+            verify_snapshot(self.snapshot)
 
     def test_cli_requires_acknowledgement_for_sensitive_copy(self):
         dest = self.parent / "isolated-test"
