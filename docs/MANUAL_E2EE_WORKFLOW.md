@@ -49,3 +49,19 @@ an isolated server and disposable test credentials have been configured.
 **Current status:** the workflow is implemented but has NOT been executed
 against a live isolated homeserver, and environment credentials are not yet
 configured or verified. Local test suites only verify the safety gates.
+
+
+## Verified environment access policy (November 20, 2026 local)
+
+The GitHub repository environment named messenger-e2ee-isolated has
+now been created with **protected_branches=true** and
+**custom_branch_policies=false**. GitHub readback confirmed those exact
+settings. At verification, there were **zero configured environment
+secrets and no manual live E2EE workflow runs**.
+
+An isolated TLS Matrix test server and disposable account secrets
+still need to be provisioned, approved and verified before a real
+round-trip can be attempted. The new offline policy tests also guard
+workflow trigger, authorization ordering, credential isolation and
+lack of artifact uploads; they cannot substitute for reading the
+current GitHub environment settings or a successful live test.

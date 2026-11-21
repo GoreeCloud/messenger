@@ -111,3 +111,12 @@ button.bordered{border:1px solid var(--outline);width:100%}
 .loaded-search input{flex:1;min-width:140px;max-width:440px}
 .loaded-search small{color:var(--soft);font-size:.73rem}
 @media(max-width:620px){.loaded-search{padding:11px 16px}.loaded-search label,.loaded-search small{width:100%}.loaded-search input{max-width:none}}
+
+/* Incoming Matrix invites are explicit opt-in, never auto-joined. */
+.invite-list{border:1px solid var(--outline);border-radius:16px;padding:12px;margin-bottom:16px;max-height:260px;overflow:auto}
+.invite-list h3{font-size:.95rem;margin:0 0 7px}
+.invite-list p{font-size:.73rem;line-height:1.45;margin:0 0 12px}
+.invite-item{border-top:1px solid var(--outline);padding:10px 0;overflow-wrap:anywhere}
+.invite-item strong{font-size:.82rem}
+.invite-actions{display:flex;gap:8px;margin-top:8px}
+.invite-actions button{flex:1;min-width:0}
