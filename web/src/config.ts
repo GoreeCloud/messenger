@@ -10,5 +10,7 @@ export function normalizeHomeserver(raw: string): string {
   return url.origin;
 }
 export function validMatrixId(value: string): boolean {
-  return /^@[^:\s]+:[^:\s]+$/.test(value) && value.length <= 255;
+  return value.length >= 4 && value.length <= 255 &&
+    /^@[^:\s]+:[^:\s]+$/.test(value) &&
+    !/[\u0000-\u001f\u007f-\u009f]/.test(value);
 }

@@ -24,3 +24,12 @@ identity, cross-signing, remote key recovery, or live interoperability.
 
 Error reporting remains a fixed, exact allowlist; untrusted server-side
 suffixes and SDK responses are never shown as validation instructions.
+
+### Matrix recipient and reply sender controls
+
+The shared web Matrix ID validation also rejects C0/C1 control characters
+(including NUL, DEL and C1 control values) without relying on a whitespace
+class. Invitation helpers check the **raw** string for these characters
+before trimming ordinary surrounding spaces, so trailing tab/newline
+injection cannot be hidden by `trim()`. The same validator protects
+remote reply-sender IDs. The tests are synthetic and never invite real users.

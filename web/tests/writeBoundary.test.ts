@@ -63,6 +63,15 @@ describe("encrypted Matrix mutations validate hostile payload boundaries", () =>
     expect(mock.invite).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "@bob:example.org\n", "\t@bob:example.org",
+    "@bob:example.org\u0000", "@bob:example.org\u0085",
+  ])("refuses controls even if trim would otherwise remove them: %s", async id => {
+    const { client, mock } = clientFixture();
+    await expect(inviteEncryptedUser(client, "!room:test", id)).rejects.toThrow();
+    expect(mock.invite).not.toHaveBeenCalled();
+  });
+
   it("refuses malformed invite identifiers and allows a validated invite only after crypto gate", async () => {
     const { client, mock } = clientFixture();
     await expect(inviteEncryptedUser(client, "!room:test", "unsafe\nuser")).rejects.toThrow();
