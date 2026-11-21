@@ -2,7 +2,7 @@ import { FormEvent, useMemo, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import { connect, createPrivateEncryptedRoom, leaveSession, listRooms } from "./matrix";
 import { validMatrixId } from "./config";
-import { reactEncrypted, safeMessage, sendEncryptedText } from "./security";
+import { inviteEncryptedUser, reactEncrypted, safeMessage, sendEncryptedText } from "./security";
 import type { MessageView } from "./matrix";
 
 export default function App() {
@@ -75,7 +75,7 @@ export default function App() {
     event.preventDefault();
     if (!client || !selected || !validMatrixId(inviteId)) { setError("Enter a valid Matrix user ID."); return; }
     void perform(async () => {
-      await client.invite(selected.id, inviteId.trim());
+      await inviteEncryptedUser(client, selected.id, inviteId.trim());
       setInviteId("");
       setNotice("Invitation sent to the homeserver.");
     });
@@ -207,7 +207,7 @@ export default function App() {
               <p className="detail-label">Room ID</p><code className="room-id">{selected.id}</code>
               <form onSubmit={invite} className="invite-form"><label htmlFor="invite">Invite a Matrix user</label>
                 <input id="invite" value={inviteId} onChange={e => setInviteId(e.target.value)} placeholder="@friend:server.org" required />
-                <button type="submit" className="quiet bordered" disabled={busy || !validMatrixId(inviteId)}>Send invitation</button></form>
+                <button type="submit" className="quiet bordered" disabled={busy || !selected.encrypted || !validMatrixId(inviteId)}>Send invitation</button></form>
             </> : <p className="muted">Choose a conversation to see its details.</p>}
           </aside>
         </main>
