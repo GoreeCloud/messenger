@@ -61,6 +61,7 @@ private fun MessengerScreen() {
     var confirmForget by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var rooms by remember { mutableStateOf<List<Conversation>>(emptyList()) }
+    var invitations by remember { mutableStateOf<List<RoomInvitation>>(emptyList()) }
     var selected by remember { mutableStateOf<Conversation?>(null) }
     var messages by remember { mutableStateOf<List<TimelineEntry>>(emptyList()) }
     var messageSearch by remember { mutableStateOf("") }
@@ -73,7 +74,7 @@ private fun MessengerScreen() {
 
     fun refresh() {
         scope.launch {
-            try { rooms = engine.rooms(); error = "" }
+            try { rooms = engine.rooms(); invitations = engine.invitations(); error = "" }
             catch (_: Exception) { error = "Unable to refresh conversations." }
         }
     }
@@ -93,6 +94,7 @@ private fun MessengerScreen() {
         busy = true; error = ""; notice = ""
         try {
             rooms = engine.restore { refresh() }
+            invitations = engine.invitations()
             connected = true
             savedSession = true
             notice = "Restored your local encrypted device. Device identity and recovery remain unverified."
@@ -117,7 +119,7 @@ private fun MessengerScreen() {
                     try {
                         val serverRevoked = engine.logout()
                         connected = false; savedSession = false; orphanedDevice = false
-                        selected = null; replyTo = null; rooms = emptyList(); messages = emptyList()
+                        selected = null; replyTo = null; rooms = emptyList(); invitations = emptyList(); messages = emptyList()
                         notice = if (serverRevoked) {
                             "Local encrypted device erased; server confirmed token revocation. Key recovery is unavailable."
                         } else {
@@ -197,6 +199,7 @@ private fun MessengerScreen() {
                             scope.launch {
                                 try {
                                     rooms = engine.login(server, username, submittedPassword) { refresh() }
+                                    invitations = engine.invitations()
                                     connected = true
                                     savedSession = true
                                     orphanedDevice = false
@@ -234,6 +237,47 @@ private fun MessengerScreen() {
                             finally { busy = false }
                         }
                     }) { Text("Create") }
+                }
+                if (invitations.isNotEmpty()) {
+                    Text("Pending room invitations", style = MaterialTheme.typography.titleMedium)
+                    Text("Joining may reveal your membership. Encryption is checked after joining; unencrypted rooms remain read-only.",
+                        style = MaterialTheme.typography.bodySmall, color = soft)
+                    invitations.forEach { invitation ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                            Text(invitation.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(enabled = !busy, onClick = {
+                                    busy = true; error = ""; notice = ""
+                                    scope.launch {
+                                        try {
+                                            engine.acceptInvitation(invitation.id)
+                                            rooms = engine.rooms()
+                                            invitations = engine.invitations()
+                                            notice = "Joined invited room. Verify encryption before sending."
+                                        } catch (_: Exception) {
+                                            error = "Could not join invitation. Check your connection and room membership."
+                                        } finally { busy = false }
+                                    }
+                                }, modifier = Modifier.semantics {
+                                    contentDescription = "Join invited room " + invitation.name
+                                }) { Text("Join") }
+                                TextButton(enabled = !busy, onClick = {
+                                    busy = true; error = ""; notice = ""
+                                    scope.launch {
+                                        try {
+                                            engine.declineInvitation(invitation.id)
+                                            invitations = engine.invitations()
+                                            notice = "Room invitation declined."
+                                        } catch (_: Exception) {
+                                            error = "Could not decline invitation. Check your connection."
+                                        } finally { busy = false }
+                                    }
+                                }, modifier = Modifier.semantics {
+                                    contentDescription = "Decline invited room " + invitation.name
+                                }) { Text("Decline") }
+                            }
+                        }
+                    }
                 }
                 LazyColumn(Modifier.weight(1f)) {
                     items(rooms, key = { it.id }) { room ->
