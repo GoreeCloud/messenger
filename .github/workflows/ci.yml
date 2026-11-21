@@ -42,6 +42,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify official Gradle wrapper scripts and JAR before execution
+        run: python3 ci/check_android_wrapper.py
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
         with:
           distribution: temurin
@@ -49,7 +51,7 @@ jobs:
           cache: gradle
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
-          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          packages: "platform-tools platforms;android-37.0 build-tools;36.0.0"
       - name: Build and test Android (retry only dependency HTTP 429)
         run: bash ../ci/retry_transient_gradle.sh ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
         working-directory: android
