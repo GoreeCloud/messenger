@@ -106,3 +106,19 @@ A policy regression test enforces this order. Neither failed run reached
 encrypted message exchange; both are setup failures rather than E2EE
 interoperability findings. Another authorized, disposable main-branch run
 must pass before any live E2EE acceptance claim.
+
+## Native Node 24 module resolution acceptance
+
+The first live run after successful disposable account registration failed
+before sending messages: native Node ESM could not resolve the browser
+`security.ts` module's extensionless relative import, even though
+TypeScript and Vite builds passed. The source now explicitly imports
+`./config.ts` (supported by the existing `allowImportingTsExtensions`
+bundler configuration), and the web suite spawns native Node 24 to
+ensure the module loads without Vite. The synthetic runner performs
+`e2ee-smoke.mjs --help` as a non-networked import preflight **before**
+pulling or starting the official Synapse container image, and rejects
+any module-resolution failure without printing credentials.
+
+This only fixes test harness startup: encrypted message and device
+interop require a separately successful live manual workflow run.

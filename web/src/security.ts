@@ -1,5 +1,5 @@
 import { EventType, MatrixClient, MsgType, RelationType } from "matrix-js-sdk";
-import { validMatrixId } from "./config";
+import { validMatrixId } from "./config.ts";
 
 /** Never rely on a decorative padlock or a stale room-list flag for send authorization. */
 export async function requireEncryptedRoom(client: MatrixClient, roomId: string): Promise<void> {
