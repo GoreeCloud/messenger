@@ -131,8 +131,9 @@ export default function App() {
                 <label htmlFor="device-passphrase">Local encryption passphrase (20+ characters)</label>
                 <input id="device-passphrase" value={devicePassphrase}
                   onChange={e => setDevicePassphrase(e.target.value)}
-                  type="password" autoComplete="new-password" minLength={20} maxLength={1024} required />
-                <p className="local-crypto-note">
+                  type="password" autoComplete="new-password" minLength={20} maxLength={1024}
+                  aria-describedby="local-crypto-note" required />
+                <p className="local-crypto-note" id="local-crypto-note">
                   Your passphrase encrypts the Matrix crypto database and is never stored. The browser
                   retains a device ID, but not a password or access token. A lost passphrase cannot be
                   recovered here. Use only one tab at a time.
@@ -156,6 +157,7 @@ export default function App() {
             <div className="room-list">
               {rooms.length === 0 ? <p className="muted empty">No rooms yet. Create your first encrypted conversation.</p> :
                 rooms.map(room => <button type="button" key={room.id} onClick={() => { setSelectedId(room.id); setReplyingTo(null); }}
+                  aria-current={selected?.id === room.id ? "true" : undefined}
                   className={"room-item " + (selected?.id === room.id ? "selected" : "")}>
                   <span className="avatar" aria-hidden="true">{room.name.substring(0, 1).toUpperCase()}</span>
                   <span className="room-copy"><strong>{room.name}</strong><small>{room.encrypted ? "Encrypted room" : "Unencrypted room · view only"}</small></span>
@@ -173,9 +175,11 @@ export default function App() {
                       <small>{message.sender} · {new Date(message.timestamp).toLocaleString()}</small>
                       <p>{message.body}</p>
                       {selected.encrypted && message.id.startsWith("$") && <div className="message-actions">
-                        <button type="button" className="message-action" onClick={() => setReplyingTo(message)}>Reply</button>
+                        <button type="button" className="message-action"
+                          aria-label={"Reply to message from " + message.sender}
+                          onClick={() => setReplyingTo(message)}>Reply</button>
                         {(["👍", "❤️", "🎉"] as const).map(emoji => <button type="button" key={emoji}
-                          className="message-action" disabled={busy} aria-label={"React with " + emoji}
+                          className="message-action" disabled={busy} aria-label={"React with " + emoji + " to message from " + message.sender}
                           onClick={() => client && void perform(async () => {
                             await reactEncrypted(client, selected.id, message.id, emoji);
                             setNotice("Reaction sent to the encrypted room.");
