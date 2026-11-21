@@ -27,6 +27,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 data class Conversation(val id: String, val name: String, val encrypted: Boolean)
+data class RoomInvitation(val id: String, val name: String)
+
+/** Stripped invite metadata NEVER proves room encryption or sender trust. */
+internal fun requirePendingRoomInvitation(roomId: String, actualId: String, membership: Membership) {
+    require(roomId.isNotBlank() && roomId == actualId && membership == Membership.INVITED) {
+        "Invitation is no longer pending."
+    }
+}
+
 data class EmojiReaction(val emoji: String, val count: Int, val reactedByMe: Boolean)
 data class TimelineEntry(
     val id: String,
@@ -135,6 +144,25 @@ class MatrixEngine(context: Context) : AutoCloseable {
         active.rooms().filter { it.membership() == Membership.JOINED }
             .map { Conversation(it.id(), it.displayName() ?: it.id(), it.isEncrypted()) }
             .sortedBy { it.name.lowercase() }
+    }
+
+    suspend fun invitations(): List<RoomInvitation> = withContext(Dispatchers.IO) {
+        val active = client ?: return@withContext emptyList()
+        active.rooms().filter { it.membership() == Membership.INVITED }
+            .map { RoomInvitation(it.id(), it.displayName() ?: it.id()) }
+            .sortedBy { it.name.lowercase() }
+    }
+
+    suspend fun acceptInvitation(roomId: String) = withContext(Dispatchers.IO) {
+        val room = requireNotNull(client?.getRoom(roomId)) { "Invitation unavailable." }
+        requirePendingRoomInvitation(roomId, room.id(), room.membership())
+        room.join()
+    }
+
+    suspend fun declineInvitation(roomId: String) = withContext(Dispatchers.IO) {
+        val room = requireNotNull(client?.getRoom(roomId)) { "Invitation unavailable." }
+        requirePendingRoomInvitation(roomId, room.id(), room.membership())
+        room.leave()
     }
 
     suspend fun createPrivateRoom(name: String): String = withContext(Dispatchers.IO) {

@@ -36,3 +36,11 @@ UI tests. No actual Matrix login request was performed.
 The test-only login input strings use the reserved example.invalid domain;
 the Compose button was enabled but **never clicked**. No existing
 Messenger account or production package installation was overwritten.
+
+## Invitation UX extension
+
+After a Matrix sync, pending room invites (if any) are shown with
+name-specific accessible Join/Decline labels, and a warning that joining
+may disclose membership. This is not a claim that the invite is encrypted
+or its sender/device is trusted. A room joined from an invitation is
+still subject to the SDK encrypted-room gate for sending.
