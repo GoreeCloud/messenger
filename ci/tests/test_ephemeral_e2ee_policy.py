@@ -45,8 +45,12 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
     def test_only_pinned_official_image_and_temporary_files(self):
         self.assertIn(IMMUTABLE_SYN, self.runner)
         self.assertIn('docker pull --quiet "$image"', self.runner)
-        self.assertIn('docker network create --internal "$network"', self.runner)
-        self.assertIn('--publish 127.0.0.1:18008:8008', self.runner)
+        self.assertIn('--network none', self.runner)
+        self.assertNotIn('docker network create', self.runner)
+        self.assertNotIn('--publish ', self.runner)
+        self.assertIn('MATRIX_TEST_UNIX_SOCKET=', self.runner)
+        self.assertIn('docker exec -i "$container"', self.runner)
+        self.assertIn('sudo chown -R "$(id -u):$(id -g)" "$workspace"', self.runner)
         for guarded in (
             "--network none", "--read-only", "--cap-drop ALL",
             "--security-opt no-new-privileges", "--pids-limit",
@@ -70,7 +74,8 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
         ):
             self.assertIn(required, self.runner)
         self.assertNotIn("matrix.goreecloud.com", self.runner)
-        self.assertNotIn("127.0.0.1:18008:8008/tcp", self.runner)
+        self.assertNotIn("--publish", self.runner)
+        self.assertNotIn("0.0.0.0", self.runner)
 
     def test_rejects_unacknowledged_local_execution_without_docker(self):
         code = subprocess.run(
@@ -79,11 +84,28 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
         self.assertEqual(2, code.returncode)
         self.assertIn("BLOCKED", code.stderr)
 
+    def test_no_host_published_port_and_runner_scoped_cleanup(self):
+        self.assertNotIn("docker network create", self.runner)
+        self.assertNotIn("--publish", self.runner)
+        self.assertIn('sudo chmod 0711 "$workspace/synapse"', self.runner)
+        self.assertIn('sudo chown -R "$(id -u):$(id -g)" "$workspace"', self.runner)
+        self.assertIn('"$workspace" == "$RUNNER_TEMP"/gc-e2ee-*', self.runner)
+
+    def test_internal_unix_relay_is_standard_library_only(self):
+        relay = (ROOT / "deploy/ephemeral_unix_relay.py").read_text()
+        self.assertIn('SOCKET = Path("/data/gc-matrix.sock")', relay)
+        self.assertIn('UPSTREAM = ("127.0.0.1", 8008)', relay)
+        self.assertIn("socketserver.UnixStreamServer", relay)
+        self.assertIn("os.geteuid() != 991", relay)
+        self.assertNotIn("0.0.0.0", relay)
+
     def test_shell_syntax_and_proxy_no_external_bind(self):
         code = subprocess.run(["bash", "-n", str(RUNNER)], capture_output=True, text=True)
         self.assertEqual(0, code.returncode, code.stderr)
         self.assertIn('server.listen(18443, "127.0.0.1"', self.proxy)
-        self.assertIn('hostname: "127.0.0.1"', self.proxy)
+        self.assertIn('socketPath: socketPath', self.proxy)
+        self.assertIn("MATRIX_TEST_UNIX_SOCKET", self.proxy)
+        self.assertNotIn("hostname:", self.proxy)
         self.assertNotIn("0.0.0.0", self.proxy)
         self.assertNotIn("localhost:443", self.proxy)
 

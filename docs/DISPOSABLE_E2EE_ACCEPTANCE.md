@@ -22,10 +22,14 @@ and a mandatory typed **YES** acknowledgment.
   verified through registry manifest inspection on November 20, 2026.
   This is **prebuilt official Synapse**, not GoreeCloud's source-built
   vendored Synapse image; that separate acceptance remains pending.
-- Docker has a dedicated `--internal` ephemeral network, no
-  production volumes, no extra Linux capabilities, no new privileges,
-  a read-only root filesystem, bounded memory/CPU/processes and only
-  a loopback-host-published Matrix client test port.
+- Docker has **`--network none`** (no container network access
+  beyond its own loopback), no published ports, no production volumes,
+  no extra capabilities, no new privileges, a read-only root filesystem,
+  and bounded memory/CPU/processes. A reviewed Python standard-library
+  relay within the disposable container exposes only a Unix-domain
+  socket under its generated, restricted test-data directory.
+  The Node HTTPS proxy on host loopback uses only that specific socket.
+  Neither the container nor the test relay can reach a public network.
 - Synapse generates a one-job signing key and shared secret; anonymous
   signup, guests, URL previews and metrics are disabled. A disposable
   runner TLS proxy accepts only Matrix API paths, binds loopback, and
@@ -40,7 +44,7 @@ and a mandatory typed **YES** acknowledgment.
   decryption by the recipient, reply and reaction relations, and a
   missing-room downgrade refusal. Failure prints fixed redacted
   messages. A finally/trap cleanup stops the proxy and deletes the
-  disposable container, Docker network and runner-generated test data.
+  disposable container, runner-only Unix socket and generated test data.
 
 ## Invocation
 
@@ -66,3 +70,22 @@ Android cross-device E2EE, device verification/cross-signing, encrypted
 key recovery, secure source-built Synapse with PostgreSQL/TLS/media
 backups, dependency audit and appropriate manual security review
 also pass.
+
+
+## First live attempt and isolation correction
+
+Manual GitHub Actions run `44865008742` (November 21, 2026 UTC)
+**did not reach the two-user E2EE acceptance**: the disposable Synapse
+container started but the health check through a Docker `--internal`
+bridge and loopback-published host port failed. A separate synthetic
+PostgreSQL network probe on the authorized VPS reproduced the
+host-publication restriction. That probe was disposed of.
+
+The original job also discovered a UID-991 cleanup problem with
+Synapse-generated test data. The revised test removes Docker published
+ports and bridge networks entirely, uses container-local loopback and a
+runner-scoped Unix-domain socket, and restores the generated test-directory
+ownership before deleting **only** the exact job-created temporary path.
+The revised workflow must still **pass an independently verified manual
+Actions run** before an encrypted roundtrip can be claimed. No prior
+failed or source-only run counts as acceptance.
