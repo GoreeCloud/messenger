@@ -49,3 +49,8 @@ This is a priority plan, not a release claim.
 - [ ] Native Android device QA, signed build and accessibility review (nine synthetic connected-device checks passed previously; current theme/invitation screens have not been accepted on hardware).
 - [ ] Production backup, restore, monitoring, rollback and migration drills.
 - [ ] Verified branch protection, CI and sole-maintainer PR workflow.
+
+- [ ] Execute and verify the manual GitHub-hosted disposable two-account
+  encrypted roundtrip workflow using pinned official Synapse image with
+  independent TLS validation. Source/build/static-policy checks are not a
+  substitute for a successful live acceptance run.
