@@ -1,0 +1,54 @@
+name: Messenger disposable Matrix E2EE acceptance (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      disposable_only_ack:
+        description: "Type YES to create disposable accounts on an ephemeral isolated CI Matrix server"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  authorization-gate:
+    name: disposable-e2ee-manual-authorization
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Reject non-main refs and missing synthetic-account consent
+        shell: bash
+        env:
+          ACKNOWLEDGE: ${{ inputs.disposable_only_ack }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" || "$ACKNOWLEDGE" != "YES" ]]; then
+            echo "BLOCKED: manual protected-main and explicit disposable-account acknowledgment required." >&2
+            exit 2
+          fi
+
+  isolated-two-account-e2ee:
+    name: disposable-synapse-two-account-e2ee
+    needs: authorization-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: messenger-e2ee-isolated
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - name: Install bounded YAML parser for synthetic test-only configuration
+        run: |
+          python3 -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: PyYAML==6.0.4
+      - name: Install locked Matrix JS SDK and Rust crypto dependencies
+        run: npm ci --no-audit --no-fund
+        working-directory: web
+      - name: Require runner-only disposable Synapse, verified TLS, two encrypted Matrix accounts
+        run: bash deploy/smoke_ephemeral_e2ee.sh --ack-disposable-only
