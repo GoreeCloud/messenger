@@ -29,9 +29,13 @@ or that neither exists on first use. A partial browser-storage wipe is blocked
 rather than silently reusing an old signing device ID with new keys. This
 currently requires support for IndexedDB database enumeration
 (\`indexedDB.databases()\`). Without that API, secure Web Crypto, IndexedDB,
-or Web Locks the opt-in feature fails closed. On sign-out, the account session
-token is discarded but the encrypted IndexedDB crypto state remains until
-the browser's site data is cleared.
+or Web Locks the opt-in feature fails closed. On sign-out, the account session token is discarded but the encrypted
+IndexedDB crypto state remains. For explicit irreversible deletion of the
+selected account's local Matrix device keys after sign-out, use
+**Erase this browser's saved encrypted device** and type **ERASE**; see
+[browser device erasure](BROWSER_DEVICE_ERASURE.md). Other website data
+remains untouched. Clearing all site data through the browser is a broader
+separate destructive action.
 
 ## Tradeoffs and recovery risk
 
@@ -61,5 +65,7 @@ the browser's site data is cleared.
 **Not production ready.** Integration and threat-model acceptance require a
 real persistent login → send/receive → reload → unlock → decrypt test, a
 wrong-passphrase test, concurrent-tab test on supported browsers, and a real
-two-device verification/key-recovery drill. Current unit tests only verify
-policy, namespacing, metadata and lease handling.
+two-device verification/key-recovery drill. Unit tests verify
+policy, namespacing, metadata, lease handling and simulated local erasure.
+They do not prove a live browser database close, encrypted history recovery,
+or cross-device trust behavior.
