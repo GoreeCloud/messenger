@@ -1,0 +1,70 @@
+name: Messenger isolated E2EE acceptance (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      disposable_accounts_ack:
+        description: "Enter YES only for two disposable accounts on an isolated HTTPS test server"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  authorization-gate:
+    name: isolated-e2ee-authorization-gate
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Refuse non-main refs and missing disposable-account confirmation
+        env:
+          ACKNOWLEDGE: ${{ inputs.disposable_accounts_ack }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" || "$ACKNOWLEDGE" != "YES" ]]; then
+            echo "BLOCKED: trusted main ref and explicit disposable account acknowledgement required." >&2
+            exit 2
+          fi
+
+  encrypted-two-account-roundtrip:
+    name: isolated-e2ee-matrix-two-account-roundtrip
+    needs: authorization-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Configure the environment to allow only protected main for this job.
+    environment: messenger-e2ee-isolated
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: web
+      - name: Verify isolated credentials are configured (no values printed)
+        shell: bash
+        env:
+          MATRIX_TEST_HOMESERVER: ${{ secrets.MATRIX_TEST_HOMESERVER }}
+          MATRIX_TEST_A_ID: ${{ secrets.MATRIX_TEST_A_ID }}
+          MATRIX_TEST_A_PASSWORD: ${{ secrets.MATRIX_TEST_A_PASSWORD }}
+          MATRIX_TEST_B_ID: ${{ secrets.MATRIX_TEST_B_ID }}
+          MATRIX_TEST_B_PASSWORD: ${{ secrets.MATRIX_TEST_B_PASSWORD }}
+        run: |
+          for var in MATRIX_TEST_HOMESERVER MATRIX_TEST_A_ID MATRIX_TEST_A_PASSWORD MATRIX_TEST_B_ID MATRIX_TEST_B_PASSWORD; do
+            if [[ -z "$(printenv "$var")" ]]; then
+              echo "BLOCKED: required disposable E2EE environment data missing." >&2
+              exit 2
+            fi
+          done
+      - name: Assert ciphertext, decryption, reply, reaction and downgrade refusal
+        working-directory: web
+        env:
+          MATRIX_TEST_HOMESERVER: ${{ secrets.MATRIX_TEST_HOMESERVER }}
+          MATRIX_TEST_A_ID: ${{ secrets.MATRIX_TEST_A_ID }}
+          MATRIX_TEST_A_PASSWORD: ${{ secrets.MATRIX_TEST_A_PASSWORD }}
+          MATRIX_TEST_B_ID: ${{ secrets.MATRIX_TEST_B_ID }}
+          MATRIX_TEST_B_PASSWORD: ${{ secrets.MATRIX_TEST_B_PASSWORD }}
+          MATRIX_TEST_DISPOSABLE_ACK: ${{ inputs.disposable_accounts_ack }}
+          MATRIX_TEST_TIMEOUT_MS: "90000"
+        run: npm run test:e2ee:live
