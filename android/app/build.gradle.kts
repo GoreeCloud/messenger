@@ -37,7 +37,10 @@ kotlin {
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.activity:activity-compose:1.11.0")
-    implementation("androidx.compose.material3:material3")
+    // The pinned official gc-ui Material 3 Expressive adapter requires 1.5.0.
+    // The Compose BOM 2026.09.00 otherwise resolves 1.4.0 (motion API is
+    // internal there); review upstream gc-ui before changing this override.
+    implementation("androidx.compose.material3:material3:1.5.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")

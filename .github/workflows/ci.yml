@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify official GoreeCloud UI source snapshots
+        run: python3 ci/check_gc_ui_source.py
       - name: Verify proposed web security header baseline
         run: python3 -m unittest discover -s ci/tests -p test_web_security_headers.py -v
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -44,6 +46,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify official GoreeCloud UI source snapshots
+        run: python3 ci/check_gc_ui_source.py
       - name: Verify official Gradle wrapper scripts and JAR before execution
         run: python3 ci/check_android_wrapper.py
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6

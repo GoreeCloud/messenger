@@ -1,6 +1,8 @@
 package com.goreecloud.messenger
 
 import android.os.Bundle
+import com.goreecloud.ui.material3.GoreeCloudExpressiveTheme
+import com.goreecloud.ui.material3.GoreeCloudTheme
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
@@ -16,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -26,26 +27,23 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-private val canvas = Color(0xFF0D121D)
-private val surface = Color(0xFF171D2A)
-private val brand = Color(0xFFBFB8FF)
-private val soft = Color(0xFFCED5E5)
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(
-                primary = brand, onPrimary = Color(0xFF272057),
-                background = canvas, surface = surface,
-                onBackground = Color(0xFFF2F4FB), onSurface = Color(0xFFF2F4FB)
-            )) { MessengerScreen() }
+            // Source-vendored from official GoreeCloud/gc-ui. The Material 3
+            // Expressive host owns palette, shapes, motion and appearance.
+            GoreeCloudExpressiveTheme { MessengerScreen() }
         }
     }
 }
 
 @Composable
 private fun MessengerScreen() {
+    // The centralized GoreeCloud design language is the source of truth.
+    val surface = GoreeCloudTheme.colors.surface
+    val brand = MaterialTheme.colorScheme.primary
+    val soft = MaterialTheme.colorScheme.onSurfaceVariant
     val context = LocalContext.current
     val engine = remember(context) { MatrixEngine(context.applicationContext) }
     DisposableEffect(engine) { onDispose { engine.close() } }
@@ -282,7 +280,7 @@ private fun MessengerScreen() {
                 LazyColumn(Modifier.weight(1f)) {
                     items(rooms, key = { it.id }) { room ->
                         Surface(color = surface, shape = RoundedCornerShape(18.dp),
-                            border = BorderStroke(1.dp, Color(0xFF505B70)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                             modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openRoom(room) }) {
                             Column(Modifier.padding(15.dp)) {
                                 Text(room.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -326,7 +324,7 @@ private fun MessengerScreen() {
                 }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     items(filterLoadedTimeline(messages, messageSearch), key = { it.id }) { msg ->
-                        Surface(shape = RoundedCornerShape(16.dp), color = if (msg.own) Color(0xFF413974) else surface,
+                        Surface(shape = RoundedCornerShape(16.dp), color = if (msg.own) MaterialTheme.colorScheme.primaryContainer else surface,
                             modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(13.dp)) {
                                 Text(msg.sender, style = MaterialTheme.typography.labelSmall, color = brand, maxLines = 1)
@@ -424,8 +422,8 @@ private fun MessengerScreen() {
             }
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (error.isNotBlank()) Text(error, color = Color(0xFFFFB4AB), style = MaterialTheme.typography.bodySmall)
-        if (notice.isNotBlank()) Text(notice, color = Color(0xFF95E0BB), style = MaterialTheme.typography.bodySmall)
+        if (error.isNotBlank()) Text(error, color = GoreeCloudTheme.colors.negative, style = MaterialTheme.typography.bodySmall)
+        if (notice.isNotBlank()) Text(notice, color = GoreeCloudTheme.colors.positive, style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Text("Experimental preview · Android Keystore-protected device · No cross-device key backup, verified identity, or production security approval.",
             style = MaterialTheme.typography.labelSmall, color = soft)
