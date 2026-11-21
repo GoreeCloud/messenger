@@ -68,9 +68,15 @@ export function safeMessage(error: unknown): string {
     "This encrypted device is already open in another tab.",
     "The homeserver returned a different device identity.",
     "Cannot persist an invalid Matrix device ID.",
+    "Sending is disabled unless the room is joined.",
+    "Cryptographic room state is unavailable. Message was not sent.",
+    "Messages must contain 1–4,000 characters.",
+    "Unsupported reaction.",
+    "Cannot reply to an invalid event.",
   ]);
-  if (safeMessages.has(message) || message.startsWith("Sending is disabled") ||
-      message.startsWith("Cryptographic room") || message.startsWith("Messages must") ||
-      message.startsWith("Unsupported reaction") || message.startsWith("Cannot reply")) return message;
+  // Exact matching only. A malicious/untrusted server error could begin
+  // with a familiar prefix and append secrets, URLs, or user identifiers.
+  // Never forward arbitrary SDK error suffixes into the visible UI.
+  if (safeMessages.has(message)) return message;
   return "Operation failed. Check your connection, homeserver permissions and room state.";
 }
