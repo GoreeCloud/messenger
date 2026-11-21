@@ -7,6 +7,17 @@ package com.goreecloud.messenger
 internal object ReactionPolicy {
     val supportedEmoji = listOf("👍", "❤️", "🎉")
 
+    /**
+     * Fail closed until the pinned Matrix Rust SDK can prove encrypted
+     * m.reaction wire envelopes. The upstream Room::send docs explicitly
+     * exempt m.reaction, so room.isEncrypted() is not sufficient.
+     */
+    fun refusePlaintextReactionTransport(): Nothing {
+        throw UnsupportedOperationException(
+            "Encrypted emoji reactions are unavailable with this Matrix SDK."
+        )
+    }
+
     fun requireEncryptedReaction(
         roomId: String,
         selectedRoomId: String?,

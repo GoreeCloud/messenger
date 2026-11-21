@@ -361,31 +361,12 @@ private fun MessengerScreen() {
                                                 contentDescription = "Reply to message from " + msg.sender
                                             }
                                         ) { Text("Reply") }
-                                        ReactionPolicy.supportedEmoji.forEach { emoji ->
-                                            val existing = msg.reactions.find { it.emoji == emoji }
-                                            TextButton(
-                                                enabled = !busy,
-                                                onClick = {
-                                                    busy = true; error = ""
-                                                    scope.launch {
-                                                        try {
-                                                            engine.toggleReaction(room.id, msg.remoteEventId, emoji)
-                                                        } catch (_: Exception) {
-                                                            error = "Encrypted reaction failed. No plaintext fallback was attempted."
-                                                        } finally { busy = false }
-                                                    }
-                                                },
-                                                modifier = Modifier.semantics {
-                                                    contentDescription = "Toggle $emoji reaction"
-                                                },
-                                                colors = ButtonDefaults.textButtonColors(
-                                                    contentColor = if (existing?.reactedByMe == true) brand else soft
-                                                )
-                                            ) {
-                                                Text(if (existing != null && existing.count > 0)
-                                                    "$emoji " + existing.count else emoji)
-                                            }
-                                        }
+                                        Text(
+                                            "Emoji reactions unavailable: this Matrix SDK does not encrypt reaction metadata.",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = soft,
+                                            modifier = Modifier.weight(1f),
+                                        )
                                     }
                                 }
                             }

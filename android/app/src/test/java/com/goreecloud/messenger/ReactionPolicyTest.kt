@@ -19,6 +19,18 @@ class ReactionPolicyTest {
         ReactionPolicy.supportedEmoji.forEach { check(emoji = it) }
     }
 
+    @Test fun refusesEvenValidSelectedEncryptedRoomReactionsUntilSdkEncryptsThem() {
+        for (emoji in ReactionPolicy.supportedEmoji) {
+            check(emoji = emoji)
+            val failure = assertThrows(UnsupportedOperationException::class.java) {
+                ReactionPolicy.refusePlaintextReactionTransport()
+            }
+            org.junit.Assert.assertTrue(
+                failure.message?.contains("unavailable with this Matrix SDK") == true
+            )
+        }
+    }
+
     @Test fun blocksPlaintextOrDepartedRooms() {
         assertThrows(IllegalArgumentException::class.java) { check(encrypted = false) }
         assertThrows(IllegalArgumentException::class.java) { check(joined = false) }

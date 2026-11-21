@@ -311,15 +311,16 @@ class MatrixEngine(context: Context) : AutoCloseable {
             // Resolve suspending SDK queries before entering Kotlin's monitor.
             val isEncrypted = room.isEncrypted()
             val isJoined = room.membership() == Membership.JOINED
-            val current = synchronized(timelineLock) {
+            synchronized(timelineLock) {
                 ReactionPolicy.requireEncryptedReaction(
                     roomId, selectedRoomId, eventId, emoji, isEncrypted, isJoined,
                 )
                 requireNotNull(timeline) { "Selected timeline unavailable." }
             }
-            // SDK owns the encryption and local toggle semantics. Never send
-            // an unencrypted custom reaction HTTP request as fallback.
-            current.toggleReaction(EventOrTransactionId.EventId(eventId), emoji)
+            // Matrix Rust SDK timeline.toggleReaction creates m.reaction.
+            // The room send path explicitly exempts that type from E2EE.
+            // Never expose a user's emoji/target relationship as plaintext.
+            ReactionPolicy.refusePlaintextReactionTransport()
         }
 
     suspend fun invite(roomId: String, userId: String) = withContext(Dispatchers.IO) {
