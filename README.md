@@ -169,3 +169,11 @@ the official Rust SDK's own-identity verification, recovery and backup
 states. This only reports SDK state; it neither performs verification
 nor provisions or restores encryption keys. See
 [Android crypto status](docs/ANDROID_CRYPTO_READINESS.md).
+
+## Browser SDK crypto state, on demand
+
+While connected, the web app can inspect read-only Matrix Rust crypto
+cross-signing and automatic backup status without exposing keys or
+modifying secret storage. See
+[web crypto readiness](docs/WEB_CRYPTO_READINESS.md). Its advisory flags
+never establish trusted recipients or a restorable encrypted backup.
