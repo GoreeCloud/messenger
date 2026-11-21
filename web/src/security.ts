@@ -94,6 +94,12 @@ export function safeMessage(error: unknown): string {
     "Cannot reply to an invalid event.",
     "Enter a valid Matrix user ID.",
     "Room name must be 1–90 characters.",
+    "Type ERASE to confirm irreversible local device deletion.",
+    "IndexedDB enumeration is required to erase this device safely.",
+    "Encrypted browser data could not be erased.",
+    "Close all other Messenger tabs before erasing this device.",
+    "No stored encrypted device was found for this account.",
+    "Encrypted browser data deletion could not be confirmed.",
   ]);
   // Exact matching only. A malicious/untrusted server error could begin
   // with a familiar prefix and append secrets, URLs, or user identifiers.

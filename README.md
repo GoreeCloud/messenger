@@ -106,3 +106,13 @@ This follows GoreeCloud UI's alpha design system, **not** a published Stable
 SDK or approved production visual/accessibility quality gate. The Android
 screen now follows system light/dark appearance; the existing web preview
 deliberately retains Iris/dark pending visual acceptance.
+
+## Opt-in local browser key erasure
+
+Ordinary web sign-out does not erase passphrase-encrypted IndexedDB key
+material. A separate, **explicitly confirmed** action is available after
+sign-out to remove the selected Matrix account's local crypto databases
+and saved device ID. There is no verified key backup or recovery: deletion
+may irreversibly destroy access to old encrypted history. Other browser
+data and remote homeserver tokens are unaffected. See
+[browser device erasure](docs/BROWSER_DEVICE_ERASURE.md).
