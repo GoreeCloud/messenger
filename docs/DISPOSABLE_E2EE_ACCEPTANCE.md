@@ -89,3 +89,20 @@ ownership before deleting **only** the exact job-created temporary path.
 The revised workflow must still **pass an independently verified manual
 Actions run** before an encrypted roundtrip can be claimed. No prior
 failed or source-only run counts as acceptance.
+
+
+## Second live run: local socket visibility (not cryptography)
+
+Run `44866044382` on protected main passed the server's internal HTTP
+health check under Docker `--network none`, confirming the first
+published-port dependency was removed. It then stopped at the Unix-socket
+readiness gate because the runner-owned process lacked traverse permission
+on the UID-991-owned synthetic data directory when it checked for the
+socket. The script granted directory traversal only **after** that check.
+
+The directory traversal adjustment now precedes the `test -S` readiness
+check, while the containing runner-owned workspace stays private (0700).
+A policy regression test enforces this order. Neither failed run reached
+encrypted message exchange; both are setup failures rather than E2EE
+interoperability findings. Another authorized, disposable main-branch run
+must pass before any live E2EE acceptance claim.

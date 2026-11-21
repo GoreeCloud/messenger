@@ -91,6 +91,13 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
         self.assertIn('sudo chown -R "$(id -u):$(id -g)" "$workspace"', self.runner)
         self.assertIn('"$workspace" == "$RUNNER_TEMP"/gc-e2ee-*', self.runner)
 
+    def test_runner_can_stat_socket_before_readiness_check(self):
+        chmod = self.runner.index('sudo chmod 0711 "$workspace/synapse"')
+        readiness = self.runner.index('[[ -S "$workspace/synapse/gc-matrix.sock" ]]')
+        self.assertLess(chmod, readiness)
+        self.assertIn('chmod 0700 "$workspace"', self.runner)
+        self.assertIn('sudo chown -R "$(id -u):$(id -g)" "$workspace"', self.runner)
+
     def test_internal_unix_relay_is_standard_library_only(self):
         relay = (ROOT / "deploy/ephemeral_unix_relay.py").read_text()
         self.assertIn('SOCKET = Path("/data/gc-matrix.sock")', relay)
