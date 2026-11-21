@@ -42,3 +42,21 @@ sdkmanager did not list a package named platforms;android-37. The Android 17
 SDK platform is published as platforms;android-37.0. The setup action now
 requests that exact package. This is a package-manager label fix, not a
 successful AGP/Compose compatibility result; the refreshed CI run must pass.
+
+## Verified physical-device check (November 20, 2026 local)
+
+On the authorized connected DE2117 handset, the coordinated migration
+successfully executed from the build worktree:
+
+    ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:connectedDebugAndroidTest --no-daemon --max-workers=2 --console=plain
+
+Gradle reported BUILD SUCCESSFUL with 74 actionable tasks. The connected
+Android instrumentation XML reported **6 tests, 0 failures, 0 errors and 0
+skipped**. The tests use a synthetic/test-only Android Keystore namespace,
+not real user Matrix credentials. GitHub protected CI at run 44854359733
+also passed web, Android and backend on the coordinated candidate.
+
+This is evidence for unit/debug APK/device-vault regression behavior. It
+**does not** demonstrate actual Matrix login, cross-device verification,
+end-to-end encrypted interoperability, screen reader acceptance or
+production release signing. Those release gates remain open.
