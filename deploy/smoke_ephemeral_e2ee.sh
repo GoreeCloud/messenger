@@ -136,6 +136,10 @@ fi
 # its disposable data mount, reachable only through runner-controlled paths.
 docker exec -i "$container" sh -c 'cat > /tmp/gc-matrix-unix-relay.py' < deploy/ephemeral_unix_relay.py
 docker exec -d "$container" python3 /tmp/gc-matrix-unix-relay.py
+# Before checking -S from the host, grant traversal on only the generated
+# synthetic Synapse data directory. The root runner-owned workspace stays
+# mode 0700; the UID-991 relay can still create its private socket.
+sudo chmod 0711 "$workspace/synapse"
 relay_ready=0
 for _ in $(seq 1 30); do
   if [[ -S "$workspace/synapse/gc-matrix.sock" ]]; then
@@ -148,7 +152,6 @@ if [[ "$relay_ready" -ne 1 ]]; then
   echo "FAIL: disposable container Unix relay did not create its socket." >&2
   exit 3
 fi
-sudo chmod 0711 "$workspace/synapse"
 export MATRIX_TEST_UNIX_SOCKET="$workspace/synapse/gc-matrix.sock"
 
 # Generate a certificate trusted only within this one ephemeral CI job.
