@@ -79,3 +79,14 @@ legitimate decrypted messages without supplying a security guarantee.
 Until trustworthy SDK provenance is exposed and real adversarial testing
 passes, Android messages should continue to state that remote device
 identity is **not verified**, and this limitation remains a release risk.
+
+## Verified browser reaction plaintext leak (disposable E2EE acceptance)
+
+A two-account isolated HTTPS Synapse E2EE run, #44868521029, revealed
+that pinned Matrix JS SDK 45.1.0 sends `m.reaction` unencrypted in
+encrypted rooms. This exposes emoji choices and relation metadata. The
+web client now **blocks reaction sends**, provides a clear explanation,
+and does not display plaintext server-injected reactions in encrypted rooms.
+The security rule is covered by tests of the actual pinned SDK route.
+See [reaction encryption limitation](REACTION_ENCRYPTION_LIMIT.md).
+Do not count a live plaintext reaction send as E2EE acceptance.

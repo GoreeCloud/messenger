@@ -131,6 +131,9 @@ button.bordered{border:1px solid var(--outline);width:100%}
 .erase-device-button{color:var(--gc-on-negative);background:var(--gc-negative);border:1px solid var(--gc-outline-soft);border-radius:var(--gc-radius-sm);min-height:var(--gc-control-min);font-weight:700;padding:8px 12px}
 .erase-device-button:disabled{opacity:var(--gc-opacity-disabled)}
 
+/* Reaction content is never published without verified E2EE semantics. */
+.reaction-notice{font-size:.73rem;line-height:1.4;color:var(--gc-text-soft)}
+
 /* On-demand, read-only account-level Matrix SDK diagnostic snapshot. */
 .crypto-readiness{border:1px solid var(--gc-outline-soft);border-radius:var(--gc-radius-md);padding:12px;margin:12px 0 18px}
 .crypto-readiness-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
