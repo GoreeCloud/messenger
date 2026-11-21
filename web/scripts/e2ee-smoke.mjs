@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { EventType, Preset, Visibility, createClient } from "matrix-js-sdk";
 import { readTestEnvironment, requiredNames } from "./e2ee-config.mjs";
+import { privateE2EELogger } from "./private-e2ee-logger.mjs";
 import { requireEncryptedRoom, sendEncryptedText, reactEncrypted } from "../src/security.ts";
 import {
   findEncryptedEvent, isEncryptedReply,
@@ -33,7 +34,7 @@ async function bounded(task, timeoutMs, purpose) {
   } finally { clearTimeout(timer); }
 }
 async function connect(homeserver, userId, password, timeoutMs) {
-  const anonymous = createClient({ baseUrl: homeserver });
+  const anonymous = createClient({ baseUrl: homeserver, logger: privateE2EELogger });
   const login = await bounded(anonymous.loginWithPassword(userId, password), timeoutMs, "login");
   if (!login.access_token || !login.user_id || !login.device_id) {
     throw new Error("Homeserver did not create a test device.");
@@ -41,6 +42,7 @@ async function connect(homeserver, userId, password, timeoutMs) {
   const client = createClient({
     baseUrl: homeserver, userId: login.user_id,
     accessToken: login.access_token, deviceId: login.device_id,
+    logger: privateE2EELogger,
   });
   try {
     // Never persist ephemeral smoke-test access tokens or crypto keys.
