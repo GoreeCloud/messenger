@@ -60,3 +60,19 @@ This is evidence for unit/debug APK/device-vault regression behavior. It
 **does not** demonstrate actual Matrix login, cross-device verification,
 end-to-end encrypted interoperability, screen reader acceptance or
 production release signing. Those release gates remain open.
+
+## Official Gradle 9.9.1 wrapper refresh and pre-execution check
+
+The wrapper JAR and Unix/Windows launchers were regenerated using official
+Gradle 9.9.1, then compared byte-for-byte against Dependabot #21. The wrapper
+JAR exactly matched Gradle's official published SHA-256:
+621008afc4f5d59357fcf06ffa644dd5aade5e091bdc363742710445f73cdaf8.
+
+Before CI executes the Gradle wrapper, standard-library SHA-256 verification
+checks the JAR, both launcher scripts, and distribution URL/checksum. Windows
+CRLF bytes are preserved by a precise Git attribute. Running the newly
+generated gradlew with --version reported Gradle 9.9.1, and seven offline
+retry/wrapper integrity unit tests passed locally.
+
+Hashes of wrapper inputs do not constitute a binary vulnerability scan or
+independent validation of arbitrary downloaded dependencies.
