@@ -1,22 +1,23 @@
-/* GC UI alpha semantic roles and Iris accent values, from GoreeCloud/gc-ui tokens/gc.tokens.json.
-   This is a first-party consumer adapter, not a competing design authority. */
-:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:dark;--canvas:#0D121D;--surface:#171D2A;--tonal:#252D3D;--text:#F2F4FB;--soft:#CED5E5;--outline:#505B70;--brand:#BFB8FF;--on-brand:#272057;--brand-container:#413974;--ring:#BFCBFF}
+/* Upstream GoreeCloud/gc-ui generated tokens, source-pinned and verified.
+   Keep established Iris/dark preview while consuming semantic roles. */
+@import "./vendor/gc-ui-tokens.css";
+:root{font-family:var(--gc-font-ui);color-scheme:dark;--canvas:var(--gc-canvas);--surface:var(--gc-surface);--tonal:var(--gc-surface-tonal);--text:var(--gc-text);--soft:var(--gc-text-soft);--outline:var(--gc-outline-soft);--brand:var(--gc-brand);--on-brand:var(--gc-on-brand);--brand-container:var(--gc-brand-container);--ring:var(--gc-focus-ring)}
 *{box-sizing:border-box}
-body{margin:0;background:var(--canvas);color:var(--text);font-size:16px;line-height:1.55}
-button,input{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.48}
+body{margin:0;background:var(--canvas);color:var(--text);font-size:16px;line-height:var(--gc-line-body)}
+button,input{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:var(--gc-opacity-disabled)}
 button:focus-visible,input:focus-visible{outline:3px solid var(--ring);outline-offset:2px}
 h1,h2,h3,p{margin-top:0}
-h1{font-size:clamp(2.75rem,4.5vw,4.375rem);line-height:1.1;letter-spacing:-.06em;font-weight:750}
+h1{font-size:var(--gc-type-display);line-height:1.1;letter-spacing:-.06em;font-weight:750}
 h2{font-size:1.55rem;line-height:1.2;letter-spacing:-.03em}
 h3{font-size:1.1rem}
 p{color:var(--soft)}
 a{color:var(--brand)}
-input{width:100%;border:1px solid var(--outline);border-radius:12px;background:#101723;color:var(--text);padding:13px 14px;min-height:44px}
+input{width:100%;border:1px solid var(--outline);border-radius:var(--gc-radius-sm);background:#101723;color:var(--text);padding:13px 14px;min-height:var(--gc-control-min)}
 input::placeholder{color:#9CA8BC}
 label{display:block;font-size:.82rem;font-weight:650;margin-bottom:7px}
-button.primary,.small-primary{border:0;border-radius:12px;color:var(--on-brand);background:var(--brand);font-weight:750;min-height:44px;padding:10px 22px}
+button.primary,.small-primary{border:0;border-radius:var(--gc-radius-sm);color:var(--on-brand);background:var(--brand);font-weight:750;min-height:var(--gc-control-min);padding:10px 22px}
 button.primary:hover,.small-primary:hover{filter:brightness(1.07)}
-button.quiet{background:transparent;border:0;color:var(--soft);padding:9px 14px;border-radius:12px}
+button.quiet{background:transparent;border:0;color:var(--soft);padding:9px 14px;border-radius:var(--gc-radius-sm)}
 button.quiet:hover{background:var(--tonal)}
 button.bordered{border:1px solid var(--outline);width:100%}
 .eyebrow{font-size:.69rem;letter-spacing:.18em;font-weight:850;color:var(--brand)}
@@ -40,7 +41,7 @@ button.bordered{border:1px solid var(--outline);width:100%}
 .feature-grid span{display:block;color:var(--brand);font-size:1.55rem}
 .feature-grid strong{display:block;margin:10px 0 5px;font-size:.91rem}
 .feature-grid small{display:block;color:var(--soft);line-height:1.45}
-.login-card{background:var(--surface);border:1px solid #3e4758;border-radius:26px;padding:40px;box-shadow:0 24px 66px rgba(0,0,0,.16)}
+.login-card{background:var(--surface);border:1px solid #3e4758;border-radius:var(--gc-radius-lg);padding:40px;box-shadow:0 24px 66px rgba(0,0,0,.16)}
 .login-card h2{font-size:2rem;margin:14px 0 9px}
 .login-card p{font-size:.91rem}
 .login-card form{display:grid;margin-top:24px}
@@ -79,7 +80,7 @@ button.bordered{border:1px solid var(--outline);width:100%}
 .detail-label{margin:26px 0 8px;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
 .room-id{font-size:.75rem;overflow-wrap:anywhere;color:var(--soft)}
 .invite-form{margin-top:30px}.invite-form button{margin-top:12px}
-.toast{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);max-width:min(660px,90vw);padding:14px 40px 14px 18px;background:#2c3d43;border:1px solid #95e0bb;color:#f2f4fb;border-radius:12px;box-shadow:0 20px 56px #0008;z-index:100}
+.toast{position:fixed;bottom:52px;left:50%;transform:translateX(-50%);max-width:min(660px,90vw);padding:14px 40px 14px 18px;background:#2c3d43;border:1px solid #95e0bb;color:#f2f4fb;border-radius:var(--gc-radius-sm);box-shadow:0 20px 56px #0008;z-index:100}
 .toast.error{background:#4F1410;border-color:#FFB4AB}
 .close{position:absolute;right:6px;top:5px;color:inherit;background:transparent;border:0;font-size:26px}
 .footer-note{text-align:center;color:#9CA8BC;font-size:.68rem;letter-spacing:.02em;padding:10px;background:#111824}
