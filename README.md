@@ -135,3 +135,15 @@ the vendored-source build. Real Android E2EE interop, identity verification,
 key recovery, hardened source-built Synapse and full recovery acceptance
 remain separate blockers. A workflow's presence is not evidence that it
 has been executed successfully.
+
+
+## Synapse source-build safety boundary
+
+Checked-in Docker Compose development previews require a preexisting
+local image and refuse registry pulls or direct image builds through
+Compose. The prebuilt developer image uses the immutable official
+Synapse 1.163.0 digest; the source preview must be built separately
+through an operator-only, explicitly acknowledged command after
+supply-chain review. See [backend setup](deploy/README.md) and
+[homeserver policy](docs/HOMESERVER_POLICY.md). No Synapse
+production deployment or real backup recovery is asserted.

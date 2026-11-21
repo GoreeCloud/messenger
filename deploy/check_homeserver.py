@@ -112,6 +112,16 @@ def check_dev_compose_policy(config: Any) -> list[str]:
         return ["Synapse service must be a YAML mapping."]
 
     errors: list[str] = []
+    approved_images = {
+        "matrixdotorg/synapse@sha256:08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6",
+        "goreecloud-messenger/synapse:1.163.0-source-local",
+    }
+    if service.get("image") not in approved_images:
+        errors.append("Synapse preview image is not an approved verified source or digest.")
+    if "build" in service:
+        errors.append("Synapse preview must not bypass the gated image build via Compose.")
+    if service.get("pull_policy") != "never":
+        errors.append("Synapse preview must refuse implicit image downloads.")
     for key in ("network_mode", "pid", "ipc"):
         if service.get(key) is not None:
             errors.append("Synapse " + key + " must be absent from isolated preview.")

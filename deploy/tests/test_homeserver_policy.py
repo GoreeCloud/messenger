@@ -102,7 +102,8 @@ def compose_config() -> dict:
     return {
         "services": {
             "synapse": {
-                "image": "matrixdotorg/synapse:v1.163.0",
+                "image": "matrixdotorg/synapse@sha256:08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6",
+                "pull_policy": "never",
                 "ports": ["127.0.0.1:8008:8008"],
                 "restart": "no",
                 "security_opt": ["no-new-privileges:true"],
@@ -125,6 +126,26 @@ class PreviewComposePolicyTests(unittest.TestCase):
                 config = compose_config()
                 config["services"]["synapse"]["ports"] = [unsafe]
                 self.assertTrue(check_dev_compose_policy(config))
+
+    def test_source_image_must_preexist_and_never_trigger_implicit_build(self):
+        config = compose_config()
+        config["services"]["synapse"]["image"] = "goreecloud-messenger/synapse:1.163.0-source-local"
+        self.assertEqual([], check_dev_compose_policy(config))
+        config["services"]["synapse"]["build"] = {"context": "../third_party/synapse"}
+        self.assertTrue(check_dev_compose_policy(config))
+
+    def test_rejects_mutable_external_tags_or_registry_pull(self):
+        for image in ("matrixdotorg/synapse:v1.163.0", "matrixdotorg/synapse:latest",
+                      "goreecloud-messenger/synapse:latest"):
+            config = compose_config()
+            config["services"]["synapse"]["image"] = image
+            self.assertTrue(check_dev_compose_policy(config))
+        config = compose_config()
+        config["services"]["synapse"]["pull_policy"] = "always"
+        self.assertTrue(check_dev_compose_policy(config))
+        config = compose_config()
+        del config["services"]["synapse"]["pull_policy"]
+        self.assertTrue(check_dev_compose_policy(config))
 
     def test_rejects_additional_unreviewed_services(self):
         config = compose_config()
