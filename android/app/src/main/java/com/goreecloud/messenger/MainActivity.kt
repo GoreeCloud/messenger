@@ -113,10 +113,14 @@ private fun MessengerScreen() {
                 scope.launch {
                     busy = true
                     try {
-                        engine.logout()
+                        val serverRevoked = engine.logout()
                         connected = false; savedSession = false; orphanedDevice = false
                         selected = null; replyTo = null; rooms = emptyList(); messages = emptyList()
-                        notice = "Local encrypted device removed. Key backup is not configured."
+                        notice = if (serverRevoked) {
+                            "Local encrypted device erased; server confirmed token revocation. Key recovery is unavailable."
+                        } else {
+                            "Local encrypted device erased, but server revocation was not confirmed. Revoke this device from another trusted client."
+                        }
                     } catch (_: Exception) { error = "Could not completely remove device data. Do not reuse this device until local storage is cleared." }
                     finally { busy = false }
                 }
