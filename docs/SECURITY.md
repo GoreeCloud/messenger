@@ -32,3 +32,8 @@
 Never include private accounts, passwords, access tokens, signing keys or messages in public issues. Treat all upstream code and dependencies as untrusted until verified.
 
 See [Android encrypted storage](ANDROID_LOCAL_STORAGE.md) for the data-at-rest protection, verified device tests and remaining limits.
+
+Offline backup-input hash/size and safe scratch-copy verification are now
+covered by [synthetic rehearsal checks](SNAPSHOT_RESTORE_REHEARSAL.md).
+The actual PostgreSQL/Synapse service restore, media/key recovery and
+production backup acceptance gates remain open.

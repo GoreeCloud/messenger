@@ -6,6 +6,7 @@ const config = () => ({
   MATRIX_TEST_A_PASSWORD: "dummy-a",
   MATRIX_TEST_B_ID: "@bob:test.example.org",
   MATRIX_TEST_B_PASSWORD: "dummy-b",
+  MATRIX_TEST_DISPOSABLE_ACK: "YES",
 });
 
 describe("live E2EE harness preflight", () => {
@@ -26,10 +27,17 @@ describe("live E2EE harness preflight", () => {
     expect(() => readTestEnvironment({ ...config(), MATRIX_TEST_TIMEOUT_MS: "NaN" })).toThrow();
     expect(() => readTestEnvironment({ ...config(), MATRIX_TEST_TIMEOUT_MS: "1" })).toThrow();
   });
+  it("requires explicit YES confirmation before allowing mutating test activity", () => {
+    expect(() => readTestEnvironment({
+      ...config(), MATRIX_TEST_DISPOSABLE_ACK: "NO",
+    })).toThrow(/acknowledgement/);
+    const missing = { ...config(), MATRIX_TEST_DISPOSABLE_ACK: "" };
+    expect(() => readTestEnvironment(missing)).toThrow(/Missing isolated/);
+  });
   it("accepts valid isolated HTTPS test configuration", () => {
     const input = readTestEnvironment(config());
     expect(input.a).toBe("@alice:test.example.org");
     expect(input.timeoutMs).toBe(90000);
-    expect(requiredNames).toHaveLength(5);
+    expect(requiredNames).toHaveLength(6);
   });
 });

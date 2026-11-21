@@ -34,20 +34,20 @@ export default function App() {
 
   function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Clear controlled UI secrets BEFORE the asynchronous server request.
+    // They stay only in the current call closure until authentication finishes.
+    const submittedPassword = password;
+    const submittedPassphrase = devicePassphrase;
+    setPassword("");
+    setDevicePassphrase("");
     void perform(async () => {
-      try {
-        const active = await connect(homeserver, username, password, () => setRevision(n => n + 1), {
-          rememberDevice, devicePassphrase,
-        });
-        setClient(active);
-        setNotice(rememberDevice
-          ? "Connected. Device keys are encrypted locally; enter the same passphrase on the next login. Access tokens remain memory-only."
-          : "Connected with an in-memory device. Keys from this session will not survive a restart.");
-      } finally {
-        // Password and crypto passphrase should not linger in React state.
-        setPassword("");
-        setDevicePassphrase("");
-      }
+      const active = await connect(homeserver, username, submittedPassword, () => setRevision(n => n + 1), {
+        rememberDevice, devicePassphrase: submittedPassphrase,
+      });
+      setClient(active);
+      setNotice(rememberDevice
+        ? "Connected. Device keys are encrypted locally; enter the same passphrase on the next login. Access tokens remain memory-only."
+        : "Connected with an in-memory device. Keys from this session will not survive a restart.");
     });
   }
 
@@ -84,9 +84,11 @@ export default function App() {
   function logout() {
     if (!client) return;
     void perform(async () => {
-      await leaveSession(client);
+      const serverRevoked = await leaveSession(client);
       setClient(null); setSelectedId(""); setDraft(""); setReplyingTo(null); setUsername("");
-      setNotice("Signed out; the local in-memory session was cleared.");
+      setNotice(serverRevoked
+        ? "Signed out locally and the homeserver confirmed this session was revoked."
+        : "Signed out locally. Server logout could not be confirmed: revoke the device token from another trusted client when connected.");
     });
   }
 
