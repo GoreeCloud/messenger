@@ -119,3 +119,19 @@ and saved device ID. There is no verified key backup or recovery: deletion
 may irreversibly destroy access to old encrypted history. Other browser
 data and remote homeserver tokens are unaffected. See
 [browser device erasure](docs/BROWSER_DEVICE_ERASURE.md).
+
+## Manual isolated two-account E2EE acceptance
+
+An additional, **explicitly acknowledged** GitHub-hosted workflow can
+provision a disposable Synapse test image and two temporary accounts,
+terminate locally trusted TLS on loopback, and exercise real encrypted
+wire/decryption, reply, reaction and downgrade checks. It never uses a
+production account, GoreeCloud VPS endpoint, personal credentials or user
+content. See [disposable E2EE acceptance](docs/DISPOSABLE_E2EE_ACCEPTANCE.md).
+
+**Not a production readiness or source-build attestation:** the isolated
+workflow uses an immutable, official prebuilt Synapse test image rather than
+the vendored-source build. Real Android E2EE interop, identity verification,
+key recovery, hardened source-built Synapse and full recovery acceptance
+remain separate blockers. A workflow's presence is not evidence that it
+has been executed successfully.
