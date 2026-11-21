@@ -184,13 +184,13 @@ b_password="$(openssl rand -hex 24)"
 echo "::add-mask::$a_password"
 echo "::add-mask::$b_password"
 if ! docker exec "$container" register_new_matrix_user \
-  --config /data/homeserver.yaml --user gc_alpha --password "$a_password" \
+  --no-admin --config /data/homeserver.yaml --user gc_alpha --password "$a_password" \
   http://localhost:8008 >/dev/null 2>&1; then
   echo "FAIL: first disposable Matrix account could not be registered." >&2
   exit 5
 fi
 if ! docker exec "$container" register_new_matrix_user \
-  --config /data/homeserver.yaml --user gc_beta --password "$b_password" \
+  --no-admin --config /data/homeserver.yaml --user gc_beta --password "$b_password" \
   http://localhost:8008 >/dev/null 2>&1; then
   echo "FAIL: second disposable Matrix account could not be registered." >&2
   exit 5
