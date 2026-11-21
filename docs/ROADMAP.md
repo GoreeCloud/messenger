@@ -54,3 +54,7 @@ This is a priority plan, not a release claim.
   encrypted roundtrip workflow using pinned official Synapse image with
   independent TLS validation. Source/build/static-policy checks are not a
   substitute for a successful live acceptance run.
+
+- [ ] Run the manual GitHub-hosted disposable Android 35 emulator workflow and
+  verify all synthetic Keystore/Compose instrumentation checks on the
+  source-pinned GoreeCloud UI theme. Compile-only CI is not device acceptance.
