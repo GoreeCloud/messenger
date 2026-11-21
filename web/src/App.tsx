@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
 import { connect, createPrivateEncryptedRoom, leaveSession, listRooms } from "./matrix";
 import { validMatrixId } from "./config";
+import { filterLoadedMessages } from "./localSearch";
 import { reactEncrypted, safeMessage, sendEncryptedText } from "./security";
 import type { MessageView } from "./matrix";
 
@@ -15,6 +16,7 @@ export default function App() {
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState("");
+  const [messageQuery, setMessageQuery] = useState("");
   const [replyingTo, setReplyingTo] = useState<MessageView | null>(null);
   const [roomName, setRoomName] = useState("");
   const [inviteId, setInviteId] = useState("");
@@ -24,6 +26,7 @@ export default function App() {
   const rooms = useMemo(() => client ? listRooms(client) : [], [client, revision]);
   const selected = rooms.find(room => room.id === selectedId) || rooms[0];
   const myId = client?.getUserId() || "";
+  const visibleMessages = selected ? filterLoadedMessages(selected.messages, messageQuery) : [];
 
   async function perform(action: () => Promise<void>) {
     setBusy(true); setError(""); setNotice("");
@@ -56,7 +59,7 @@ export default function App() {
     if (!client || !roomName.trim()) return;
     void perform(async () => {
       const roomId = await createPrivateEncryptedRoom(client, roomName);
-      setRoomName(""); setSelectedId(roomId); setRevision(n => n + 1);
+      setRoomName(""); setSelectedId(roomId); setMessageQuery(""); setRevision(n => n + 1);
       setNotice("Private encrypted room requested from the homeserver.");
     });
   }
@@ -85,7 +88,7 @@ export default function App() {
     if (!client) return;
     void perform(async () => {
       const serverRevoked = await leaveSession(client);
-      setClient(null); setSelectedId(""); setDraft(""); setReplyingTo(null); setUsername("");
+      setClient(null); setSelectedId(""); setDraft(""); setReplyingTo(null); setUsername(""); setMessageQuery("");
       setNotice(serverRevoked
         ? "Signed out locally and the homeserver confirmed this session was revoked."
         : "Signed out locally. Server logout could not be confirmed: revoke the device token from another trusted client when connected.");
@@ -156,7 +159,7 @@ export default function App() {
             </form>
             <div className="room-list">
               {rooms.length === 0 ? <p className="muted empty">No rooms yet. Create your first encrypted conversation.</p> :
-                rooms.map(room => <button type="button" key={room.id} onClick={() => { setSelectedId(room.id); setReplyingTo(null); }}
+                rooms.map(room => <button type="button" key={room.id} onClick={() => { setSelectedId(room.id); setReplyingTo(null); setMessageQuery(""); }}
                   aria-current={selected?.id === room.id ? "true" : undefined}
                   className={"room-item " + (selected?.id === room.id ? "selected" : "")}>
                   <span className="avatar" aria-hidden="true">{room.name.substring(0, 1).toUpperCase()}</span>
@@ -168,9 +171,19 @@ export default function App() {
           <section className="conversation" aria-label="Selected conversation">
             {selected ? <>
               <div className="conversation-top"><div><h2>{selected.name}</h2><p>{selected.encrypted ? "Encrypted conversation · Verification unavailable in preview" : "Unencrypted room · Sending disabled"}</p></div><span className="room-indicator" aria-label={selected.encrypted ? "Encrypted" : "Not encrypted"}>{selected.encrypted ? "◇ Encrypted" : "⚠ Unencrypted"}</span></div>
+              <div className="loaded-search">
+                <label htmlFor="loaded-message-search">Search loaded messages</label>
+                <input id="loaded-message-search" type="search" value={messageQuery}
+                  maxLength={128} autoComplete="off" placeholder="Find text or sender in this room"
+                  onChange={e => setMessageQuery(e.target.value)} />
+                <small>{messageQuery.trim() ? visibleMessages.length + " local matches" :
+                  "On-device search of loaded messages only. No server search."}</small>
+              </div>
               <div className="messages" role="log" aria-live="polite" aria-label="Messages">
                 {selected.messages.length === 0 ? <div className="empty-chat"><span aria-hidden="true">◌</span><h3>A fresh conversation</h3><p>Once messages arrive, they will appear here.</p></div> :
-                  selected.messages.map(message =>
+                  visibleMessages.length === 0
+                    ? <div className="empty-chat"><h3>No local matches</h3><p>Only currently loaded messages are searched. Load older history to search more.</p></div>
+                    : visibleMessages.map(message =>
                     <article className={"message " + (message.sender === myId ? "mine" : "")} key={message.id}>
                       <small>{message.sender} · {new Date(message.timestamp).toLocaleString()}</small>
                       <p>{message.body}</p>

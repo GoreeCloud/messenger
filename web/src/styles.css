@@ -104,3 +104,10 @@ button.bordered{border:1px solid var(--outline);width:100%}
   outline: 3px solid var(--brand);
   outline-offset: 3px;
 }
+
+/* Message search is local to the already loaded, decrypted timeline. */
+.loaded-search{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 28px;border-bottom:1px solid var(--outline)}
+.loaded-search label{margin:0;white-space:nowrap}
+.loaded-search input{flex:1;min-width:140px;max-width:440px}
+.loaded-search small{color:var(--soft);font-size:.73rem}
+@media(max-width:620px){.loaded-search{padding:11px 16px}.loaded-search label,.loaded-search small{width:100%}.loaded-search input{max-width:none}}
