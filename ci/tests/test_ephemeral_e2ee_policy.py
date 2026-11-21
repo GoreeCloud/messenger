@@ -83,6 +83,17 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
         self.assertLess(preflight, pull)
         self.assertIn("BLOCKED: native Node E2EE harness modules", self.runner)
 
+    def test_smoke_harness_provides_private_logger_to_both_matrix_clients(self):
+        harness = (ROOT / "web/scripts/e2ee-smoke.mjs").read_text()
+        self.assertIn('import { privateE2EELogger }', harness)
+        self.assertIn('baseUrl: homeserver, logger: privateE2EELogger', harness)
+        self.assertIn('logger: privateE2EELogger,', harness)
+        self.assertNotIn('console.error(e)', harness)
+        logger = (ROOT / "web/scripts/private-e2ee-logger.mjs").read_text()
+        for method in ("trace:", "debug:", "info:", "warn:", "error:"):
+            self.assertIn(method, logger)
+        self.assertIn('getChild() { return this; }', logger)
+
     def test_synthetic_registration_is_explicitly_noninteractive_nonadmin(self):
         # Synapse prompts on stdin for admin choice unless --no-admin is set.
         lines = self.runner.splitlines()
