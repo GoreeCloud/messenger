@@ -11,6 +11,35 @@ import type { ExclusiveLock } from "./deviceStore";
 export type MessageView = { id: string; body: string; sender: string; timestamp: number; reactions: { emoji: string; count: number }[] };
 export type RoomView = { id: string; name: string; encrypted: boolean; messages: MessageView[] };
 
+export type InvitationView = { id: string; name: string };
+
+/** A Matrix invite is NOT evidence of E2EE or sender identity. */
+export function listInvitations(client: MatrixClient): InvitationView[] {
+  return client.getRooms()
+    .filter(room => room.getMyMembership() === "invite")
+    .map(room => ({ id: room.roomId, name: room.name || room.roomId }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function requirePendingInvitation(client: MatrixClient, roomId: string): Promise<void> {
+  const room = client.getRoom(roomId);
+  if (!roomId || !room || room.getMyMembership() !== "invite") {
+    throw new Error("This invitation is no longer pending.");
+  }
+}
+
+/** Explicit user intent only; no automatic joining, trust or encryption claim. */
+export async function acceptInvitation(client: MatrixClient, roomId: string): Promise<void> {
+  await requirePendingInvitation(client, roomId);
+  await client.joinRoom(roomId);
+}
+
+/** Decline an invitation without joining it; Matrix uses leave for invites. */
+export async function declineInvitation(client: MatrixClient, roomId: string): Promise<void> {
+  await requirePendingInvitation(client, roomId);
+  await client.leave(roomId);
+}
+
 export type SessionOptions = {
   rememberDevice?: boolean;
   devicePassphrase?: string;
