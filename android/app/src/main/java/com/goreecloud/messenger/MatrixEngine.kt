@@ -308,12 +308,14 @@ class MatrixEngine(context: Context) : AutoCloseable {
         }
 
     suspend fun invite(roomId: String, userId: String) = withContext(Dispatchers.IO) {
-        require(Regex("^@[^:\\s]+:[^:\\s]+$").matches(userId) && userId.length <= 255) {
-            "Enter a valid Matrix user ID."
-        }
         val room = requireNotNull(client?.getRoom(roomId)) { "Room unavailable." }
-        require(room.isEncrypted()) { "Invitations from this preview require an encrypted room." }
-        room.inviteUserById(userId)
+        val isEncrypted = room.isEncrypted()
+        val isJoined = room.membership() == Membership.JOINED
+        val currentSelection = synchronized(timelineLock) { selectedRoomId }
+        val validatedId = InvitePolicy.requireEncryptedInvitation(
+            roomId, currentSelection, userId, isEncrypted, isJoined,
+        )
+        room.inviteUserById(validatedId)
     }
 
     /** Local device removal is unconditional; server token revocation is not. */
