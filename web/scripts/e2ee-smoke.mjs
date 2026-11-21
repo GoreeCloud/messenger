@@ -66,11 +66,18 @@ async function main() {
     console.log("Requires trusted HTTPS test server and two disposable accounts.");
     console.log("Required: " + requiredNames.join(", "));
     console.log("Optional: MATRIX_TEST_TIMEOUT_MS (2000–300000).");
-    console.log("Test creates/leaves a room. Do not use private personal accounts.");
+    console.log("Set MATRIX_TEST_DISPOSABLE_ACK=YES only after verifying isolated server and disposable accounts.");
+    console.log("Test creates/leaves a room; history persists. Never use private personal accounts.");
     if (!process.argv.includes("--help")) process.exitCode = 2;
     return;
   }
-  const env = readTestEnvironment(process.env);
+  let env;
+  try { env = readTestEnvironment(process.env); }
+  catch {
+    console.error("BLOCKED: unsafe or invalid E2EE test configuration; no network request made.");
+    process.exitCode = 2;
+    return;
+  }
   let first, second, roomId = "";
   const nonce = "gc-e2ee-smoke-" + randomUUID();
   const responseNonce = "gc-e2ee-reply-" + randomUUID();

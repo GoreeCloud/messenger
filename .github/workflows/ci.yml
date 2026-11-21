@@ -49,7 +49,7 @@ jobs:
           cache: gradle
       - uses: android-actions/setup-android@v3
         with:
-          packages: "platform-tools platforms;android-36 build-tools;35.0.0"
+          packages: "platform-tools platforms;android-37.0 build-tools;36.0.0"
       - name: Build and test Android (retry only dependency HTTP 429)
         run: bash ../ci/retry_transient_gradle.sh ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --console=plain
         working-directory: android

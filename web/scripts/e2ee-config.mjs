@@ -2,10 +2,14 @@
 export const requiredNames = [
   "MATRIX_TEST_HOMESERVER", "MATRIX_TEST_A_ID", "MATRIX_TEST_A_PASSWORD",
   "MATRIX_TEST_B_ID", "MATRIX_TEST_B_PASSWORD",
+  "MATRIX_TEST_DISPOSABLE_ACK",
 ];
 export function readTestEnvironment(env) {
   const missing = requiredNames.filter(name => !env[name]?.trim());
   if (missing.length) throw new Error("Missing isolated test configuration: " + missing.join(", "));
+  if (env.MATRIX_TEST_DISPOSABLE_ACK !== "YES") {
+    throw new Error("Running a mutating E2EE smoke test requires explicit disposable-account acknowledgement.");
+  }
   let base;
   try { base = new URL(env.MATRIX_TEST_HOMESERVER); }
   catch { throw new Error("Invalid test homeserver URL."); }

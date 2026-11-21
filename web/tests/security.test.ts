@@ -56,6 +56,25 @@ describe("Matrix encrypted message enforcement", () => {
     expect(safeMessage(new Error("Bad vault token=secret123")))
       .not.toContain("secret123");
   });
+  it.each([
+    "Sending is disabled unless the room is joined. token=private",
+    "Cryptographic room state is unavailable. Message was not sent. user=@alice:test",
+    "Messages must contain 1–4,000 characters. bearer=secret",
+    "Unsupported reaction. access_token=XYZ",
+    "Cannot reply to an invalid event. /_matrix/client?token=secret",
+  ])("redacts malicious lookalike SDK error prefixes: %s", upstream => {
+    const userFacing = safeMessage(new Error(upstream));
+    expect(userFacing).toBe("Operation failed. Check your connection, homeserver permissions and room state.");
+    expect(userFacing).not.toContain("token");
+    expect(userFacing).not.toContain("@alice");
+  });
+
+  it("still reports exact, trusted local policy errors", () => {
+    expect(safeMessage(new Error("Sending is disabled unless the room is joined.")))
+      .toBe("Sending is disabled unless the room is joined.");
+    expect(safeMessage(new Error("Unsupported reaction."))).toBe("Unsupported reaction.");
+  });
+
   it("rejects rooms missing a real client instance", async () => {
     const { client } = mockClient({ room: false });
     await expect(requireEncryptedRoom(client, "!missing:test")).rejects.toThrow();

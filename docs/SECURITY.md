@@ -37,3 +37,9 @@ Offline backup-input hash/size and safe scratch-copy verification are now
 covered by [synthetic rehearsal checks](SNAPSHOT_RESTORE_REHEARSAL.md).
 The actual PostgreSQL/Synapse service restore, media/key recovery and
 production backup acceptance gates remain open.
+
+Browser UI SDK error redaction now uses **exact messages from a controlled
+allowlist**, not prefix matching. Prefix-matching arbitrary upstream errors
+could reveal attacker-supplied identifiers or bearer credentials inside the
+UI; new unit tests deliberately inject lookalike malicious error strings.
+This does not remove the need for strict logging/CSP/XSS review.
