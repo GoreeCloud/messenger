@@ -63,6 +63,7 @@ private fun MessengerScreen() {
     var rooms by remember { mutableStateOf<List<Conversation>>(emptyList()) }
     var selected by remember { mutableStateOf<Conversation?>(null) }
     var messages by remember { mutableStateOf<List<TimelineEntry>>(emptyList()) }
+    var messageSearch by remember { mutableStateOf("") }
     var draft by remember { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<TimelineEntry?>(null) }
     var roomName by remember { mutableStateOf("") }
@@ -78,7 +79,7 @@ private fun MessengerScreen() {
     }
 
     fun openRoom(room: Conversation) {
-        selected = room; messages = emptyList(); draft = ""; replyTo = null; error = ""
+        selected = room; messages = emptyList(); messageSearch = ""; draft = ""; replyTo = null; error = ""
         scope.launch {
             try {
                 engine.openRoom(room.id) { snapshot ->
@@ -250,7 +251,7 @@ private fun MessengerScreen() {
             } else {
                 val room = selected!!
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { selected = null; replyTo = null; messages = emptyList(); error = "" }) { Text("← Rooms") }
+                    TextButton(onClick = { selected = null; replyTo = null; messages = emptyList(); messageSearch = ""; error = "" }) { Text("← Rooms") }
                     Column(Modifier.weight(1f)) {
                         Text(room.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
                         Text(if (room.encrypted) "Encrypted · identity not verified" else "Unencrypted · sending blocked",
@@ -267,8 +268,20 @@ private fun MessengerScreen() {
                         finally { busy = false }
                     }
                 }) { Text("Load older messages") }
+                OutlinedTextField(
+                    value = messageSearch,
+                    onValueChange = { messageSearch = it.take(128) },
+                    label = { Text("Search loaded messages") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("matrix-local-search"),
+                )
+                Text("Only loaded messages are searched on this device; no server search.",
+                    style = MaterialTheme.typography.labelSmall, color = soft)
+                if (messageSearch.isNotBlank() && filterLoadedTimeline(messages, messageSearch).isEmpty()) {
+                    Text("No matches in loaded messages.", style = MaterialTheme.typography.bodySmall)
+                }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    items(messages, key = { it.id }) { msg ->
+                    items(filterLoadedTimeline(messages, messageSearch), key = { it.id }) { msg ->
                         Surface(shape = RoundedCornerShape(16.dp), color = if (msg.own) Color(0xFF413974) else surface,
                             modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(13.dp)) {
