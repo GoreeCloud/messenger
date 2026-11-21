@@ -34,3 +34,11 @@ https://developer.android.com/build/releases/agp-9-1-0-release-notes
 https://developer.android.com/build/releases/agp-9-5-0-release-notes
 
 No production release or deployment is represented by this build migration.
+
+## First GitHub CI preflight correction
+
+The first run (44853951706) failed **before** Gradle compilation because
+sdkmanager did not list a package named platforms;android-37. The Android 17
+SDK platform is published as platforms;android-37.0. The setup action now
+requests that exact package. This is a package-manager label fix, not a
+successful AGP/Compose compatibility result; the refreshed CI run must pass.
