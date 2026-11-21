@@ -23,8 +23,11 @@ import org.matrix.rustcomponents.sdk.TimelineItem
 import org.matrix.rustcomponents.sdk.TimelineItemContent
 import org.matrix.rustcomponents.sdk.TimelineListener
 import org.matrix.rustcomponents.sdk.messageEventContentNew
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class Conversation(val id: String, val name: String, val encrypted: Boolean)
 data class RoomInvitation(val id: String, val name: String)
@@ -376,16 +379,28 @@ internal fun applyTimelineDiff(items: MutableList<TimelineItem>, diffs: List<Tim
 internal suspend fun revokeAndForget(
     revoke: suspend () -> Unit,
     forget: () -> Unit,
+    revokeTimeoutMs: Long = 8_000,
 ): Boolean {
-    var serverRevoked = false
+    require(revokeTimeoutMs in 1..30_000) { "Invalid server logout timeout." }
+    // Never let unreachable server-side revocation prevent the user from
+    // destroying local encryption keys after explicit confirmation.
+    val revoked: Boolean
     try {
-        revoke()
-        serverRevoked = true
-    } catch (_: Exception) {
-        // Do not report remote token revocation or log SDK response contents.
+        revoked = withTimeoutOrNull(revokeTimeoutMs) {
+            try {
+                revoke()
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Do not claim server revocation or log response contents.
+                false
+            }
+        } ?: false
     } finally {
-        // The user explicitly chose irreversible local device erasure.
-        forget()
+        // Local erase must run even if the caller is cancelled while the
+        // SDK is waiting for the network. Deletion errors still propagate.
+        withContext(NonCancellable) { forget() }
     }
-    return serverRevoked
+    return revoked
 }
