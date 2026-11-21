@@ -73,6 +73,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check offline source pins and manual E2EE workflow safety
+        run: python3 -m unittest discover -s ci/tests -v
       - run: python3 -m unittest discover -s deploy/tests -v
       - run: python3 deploy/verify_source.py
       - run: bash deploy/build_source.sh
