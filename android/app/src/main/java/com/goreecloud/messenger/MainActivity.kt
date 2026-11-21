@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -174,15 +175,15 @@ private fun MessengerScreen() {
                         Button(enabled = !busy, onClick = { scope.launch { attemptRestore() } }) { Text("Retry device restoration") }
                         TextButton(enabled = !busy, onClick = { confirmForget = true }) { Text("Forget stored device (irreversible)") }
                     }
-                    OutlinedTextField(server, { server = it }, label = { Text("HTTPS homeserver origin") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(username, { username = it }, label = { Text("Matrix username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(server, { server = it }, label = { Text("HTTPS homeserver origin") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("matrix-homeserver"))
+                    OutlinedTextField(username, { username = it }, label = { Text("Matrix username") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("matrix-username"))
                     OutlinedTextField(password, { password = it }, label = { Text("Password") },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier.fillMaxWidth())
+                        modifier = Modifier.fillMaxWidth().testTag("matrix-password"))
                     Button(enabled = !busy && !savedSession && !orphanedDevice &&
                         username.isNotBlank() && password.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth(), onClick = {
+                        modifier = Modifier.fillMaxWidth().testTag("matrix-sign-in"), onClick = {
                             // Clear the Compose password field immediately, including
                             // on authentication failures, rather than retain it in UI state.
                             val submittedPassword = password
