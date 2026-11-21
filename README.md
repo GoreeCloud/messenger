@@ -136,6 +136,12 @@ key recovery, hardened source-built Synapse and full recovery acceptance
 remain separate blockers. A workflow's presence is not evidence that it
 has been executed successfully.
 
+## Disposable E2EE test isolation update
+
+The manual Synapse acceptance uses a Docker container with `--network none`
+and a restricted Unix-domain socket to reach a loopback-only, runner-local
+TLS proxy. No Docker host ports, production volumes, accounts, or domains
+are exposed. See [test isolation and remaining acceptance](docs/DISPOSABLE_E2EE_ACCEPTANCE.md).
 
 ## Synapse source-build safety boundary
 

@@ -16,7 +16,6 @@ test -n "$RUNNER_TEMP" && test -d "$RUNNER_TEMP" || {
 
 image="matrixdotorg/synapse@sha256:08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6"
 container="gc-e2ee-synapse-$GITHUB_RUN_ID"
-network="gc-e2ee-network-$GITHUB_RUN_ID"
 workspace="$(mktemp -d "$RUNNER_TEMP/gc-e2ee-XXXXXXXX")"
 chmod 0700 "$workspace"
 proxy_pid=""
@@ -26,9 +25,11 @@ cleanup() {
     wait "$proxy_pid" 2>/dev/null || true
   fi
   docker rm -f "$container" >/dev/null 2>&1 || true
-  docker network rm "$network" >/dev/null 2>&1 || true
   # Only delete our exact mktemp child under the GitHub runner's temp path.
   if [[ "$workspace" == "$RUNNER_TEMP"/gc-e2ee-* && -d "$workspace" ]]; then
+    # The Synapse-generated files belong to UID 991, not the runner.
+    # Chown only this exact disposable directory after its container stops.
+    sudo chown -R "$(id -u):$(id -g)" "$workspace" >/dev/null 2>&1 || true
     rm -rf -- "$workspace"
   fi
 }
@@ -36,10 +37,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-echo "Starting pinned official Synapse image in a disposable internal Docker network."
+echo "Starting pinned official Synapse image with Docker network access disabled."
 docker pull --quiet "$image" >/dev/null
 docker image inspect "$image" >/dev/null
-docker network create --internal "$network" >/dev/null
 mkdir -m 0700 "$workspace/synapse"
 sudo chown 991:991 "$workspace/synapse"
 # The pinned official image generates its disposable signing key and shared secret.
@@ -75,7 +75,7 @@ for listener in listeners:
     if not isinstance(listener, dict) or listener.get("type") != "http" or listener.get("tls"):
         continue
     if listener.get("port") == 8008:
-        listener["bind_addresses"] = ["0.0.0.0"]
+        listener["bind_addresses"] = ["127.0.0.1"]
         client_listener_found = True
 if not client_listener_found:
     raise SystemExit("BLOCKED: generated client listener is absent.")
@@ -99,28 +99,57 @@ PY
 # only generated test secrets; it never mounts any production host files.
 sudo chown -R 991:991 "$workspace/synapse"
 docker run -d --rm --name "$container" --pull never \
-  --network "$network" --read-only --user 991:991 \
+  --network none --read-only --user 991:991 \
   --memory 1536m --cpus 2 --pids-limit 256 --cap-drop ALL \
   --security-opt no-new-privileges \
   --tmpfs /tmp:rw,nosuid,noexec,size=96m \
-  --publish 127.0.0.1:18008:8008 \
   --mount "type=bind,source=$workspace/synapse,target=/data" \
   -e SYNAPSE_CONFIG_PATH=/data/homeserver.yaml \
   "$image" >/dev/null
 
 ready=0
-for _ in $(seq 1 120); do
-  if curl -fsS --connect-timeout 1 --max-time 2 \
-    http://127.0.0.1:18008/_matrix/client/versions >/dev/null 2>&1; then
+for _ in $(seq 1 180); do
+  # The container has no network interfaces other than its own loopback.
+  # Check the Matrix API with the Python already installed in its image.
+  if docker exec "$container" python3 -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8008/_matrix/client/versions", timeout=2).read(32)' >/dev/null 2>&1; then
     ready=1
     break
   fi
   sleep 1
 done
 if [[ "$ready" -ne 1 ]]; then
-  echo "FAIL: disposable homeserver did not pass the private Matrix health check." >&2
+  state="$(docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$container" 2>/dev/null || echo "not-running")"
+  echo "FAIL: disposable homeserver did not pass internal localhost Matrix health check. State: $state" >&2
+  logs="$(docker logs "$container" --tail 100 2>&1 || true)"
+  if grep -Eqi '(permission denied|permissionerror|operation not permitted)' <<< "$logs"; then
+    echo "DIAG: test container reported a filesystem/UID permission problem." >&2
+  elif grep -Eqi '(configerror|configuration error|missing required)' <<< "$logs"; then
+    echo "DIAG: test container reported a Synapse config error." >&2
+  elif grep -Eqi '(bind|listen|address already)' <<< "$logs"; then
+    echo "DIAG: test container reported an internal listener problem." >&2
+  fi
   exit 3
 fi
+
+# Copy only the reviewed local stdlib relay into the ephemeral container.
+# No host TCP port is published: the container exposes a Unix socket in
+# its disposable data mount, reachable only through runner-controlled paths.
+docker exec -i "$container" sh -c 'cat > /tmp/gc-matrix-unix-relay.py' < deploy/ephemeral_unix_relay.py
+docker exec -d "$container" python3 /tmp/gc-matrix-unix-relay.py
+relay_ready=0
+for _ in $(seq 1 30); do
+  if [[ -S "$workspace/synapse/gc-matrix.sock" ]]; then
+    relay_ready=1
+    break
+  fi
+  sleep 0.2
+done
+if [[ "$relay_ready" -ne 1 ]]; then
+  echo "FAIL: disposable container Unix relay did not create its socket." >&2
+  exit 3
+fi
+sudo chmod 0711 "$workspace/synapse"
+export MATRIX_TEST_UNIX_SOCKET="$workspace/synapse/gc-matrix.sock"
 
 # Generate a certificate trusted only within this one ephemeral CI job.
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \

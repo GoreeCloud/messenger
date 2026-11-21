@@ -26,9 +26,13 @@ export function permittedTestPath(path) {
     !/[\x00-\x1f\x7f]/.test(path);
 }
 
-export function startEphemeralProxy(certFile, keyFile, upstreamPort = 18008) {
-  if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535) {
-    throw new Error("Invalid disposable Matrix port.");
+export function startEphemeralProxy(certFile, keyFile, socketPath = process.env.MATRIX_TEST_UNIX_SOCKET) {
+  // Do not allow this test tool to connect to an arbitrary host service.
+  const runnerRoot = process.env.RUNNER_TEMP;
+  if (!runnerRoot || typeof socketPath !== "string" ||
+      !socketPath.startsWith(runnerRoot + "/gc-e2ee-") ||
+      !socketPath.endsWith("/synapse/gc-matrix.sock")) {
+    throw new Error("BLOCKED: expected disposable runner Unix socket is missing.");
   }
   const server = https.createServer({
     cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile),
@@ -39,8 +43,7 @@ export function startEphemeralProxy(certFile, keyFile, upstreamPort = 18008) {
       return;
     }
     const upstream = http.request({
-      hostname: "127.0.0.1",
-      port: upstreamPort,
+      socketPath: socketPath,
       method: request.method,
       path: request.url,
       headers: forwardedHeaders(request.headers),

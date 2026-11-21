@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { forwardedHeaders, permittedTestPath } from "../scripts/ephemeral-tls-proxy.mjs";
+import { forwardedHeaders, permittedTestPath, startEphemeralProxy } from "../scripts/ephemeral-tls-proxy.mjs";
 
 describe("ephemeral Matrix test TLS proxy request boundaries", () => {
   it.each([
@@ -21,6 +21,11 @@ describe("ephemeral Matrix test TLS proxy request boundaries", () => {
     } else {
       expect(permittedTestPath(path)).toBe(false);
     }
+  });
+
+  it("refuses a non-runner or missing Unix socket before reading TLS files", () => {
+    expect(() => startEphemeralProxy("missing", "missing", "/tmp/other.sock"))
+      .toThrow("BLOCKED:");
   });
 
   it("removes hop-by-hop, proxy and upgrade control headers before forwarding", () => {
