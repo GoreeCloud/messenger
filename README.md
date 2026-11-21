@@ -178,3 +178,11 @@ transmits `m.reaction` metadata and emoji without E2EE even in a private
 encrypted room. The app does not leak reaction content while claiming
 end-to-end privacy; message and encrypted reply functionality remains.
 See [verified reaction encryption limitation](docs/REACTION_ENCRYPTION_LIMIT.md).
+
+## Browser SDK crypto state, on demand
+
+While connected, the web app can inspect read-only Matrix Rust crypto
+cross-signing and automatic backup status without exposing keys or
+modifying secret storage. See
+[web crypto readiness](docs/WEB_CRYPTO_READINESS.md). Its advisory flags
+never establish trusted recipients or a restorable encrypted backup.

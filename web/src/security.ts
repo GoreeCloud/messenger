@@ -109,6 +109,7 @@ export function safeMessage(error: unknown): string {
     "Close all other Messenger tabs before erasing this device.",
     "No stored encrypted device was found for this account.",
     "Encrypted browser data deletion could not be confirmed.",
+    "Local crypto SDK status is unavailable.",
   ]);
   // Exact matching only. A malicious/untrusted server error could begin
   // with a familiar prefix and append secrets, URLs, or user identifiers.

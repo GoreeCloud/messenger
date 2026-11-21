@@ -4,6 +4,11 @@ import { acceptInvitation, connect, createPrivateEncryptedRoom, declineInvitatio
   listInvitations, listRooms } from "./matrix";
 import { validMatrixId } from "./config";
 import { filterLoadedMessages } from "./localSearch";
+import {
+  cryptoReadinessDisclaimer, cryptoReadinessSummary,
+  inspectBrowserCryptoReadiness,
+} from "./cryptoReadiness";
+import type { BrowserCryptoReadiness } from "./cryptoReadiness";
 import { eraseBrowserCryptoDevice } from "./eraseDevice";
 import { inviteEncryptedUser, safeMessage, sendEncryptedText } from "./security";
 import type { MessageView } from "./matrix";
@@ -17,6 +22,7 @@ export default function App() {
   const [eraseAcknowledgment, setEraseAcknowledgment] = useState("");
   const [devicePassphrase, setDevicePassphrase] = useState("");
   const [client, setClient] = useState<MatrixClient | null>(null);
+  const [cryptoReadiness, setCryptoReadiness] = useState<BrowserCryptoReadiness | null>(null);
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState("");
@@ -53,6 +59,7 @@ export default function App() {
         rememberDevice, devicePassphrase: submittedPassphrase,
       });
       setClient(active);
+      setCryptoReadiness(null);
       setNotice(rememberDevice
         ? "Connected. Device keys are encrypted locally; enter the same passphrase on the next login. Access tokens remain memory-only."
         : "Connected with an in-memory device. Keys from this session will not survive a restart.");
@@ -112,7 +119,7 @@ export default function App() {
     if (!client) return;
     void perform(async () => {
       const serverRevoked = await leaveSession(client);
-      setClient(null); setSelectedId(""); setDraft(""); setReplyingTo(null); setUsername(""); setMessageQuery("");
+      setClient(null); setCryptoReadiness(null); setSelectedId(""); setDraft(""); setReplyingTo(null); setUsername(""); setMessageQuery("");
       setNotice(serverRevoked
         ? "Signed out locally and the homeserver confirmed this session was revoked."
         : "Signed out locally. Server logout could not be confirmed: revoke the device token from another trusted client when connected.");
@@ -285,6 +292,19 @@ export default function App() {
           <aside className="details-panel" aria-label="Room details">
             <span className="eyebrow">CONVERSATION DETAILS</span>
             <h3>Room information</h3>
+            <section className="crypto-readiness" aria-label="Local encryption SDK status">
+              <div className="crypto-readiness-heading">
+                <strong>Local SDK crypto status</strong>
+                <button type="button" className="quiet bordered" disabled={busy}
+                  onClick={() => client && void perform(async () => {
+                    setCryptoReadiness(await inspectBrowserCryptoReadiness(client));
+                  })}>Inspect</button>
+              </div>
+              <p role="status">{cryptoReadiness
+                ? cryptoReadinessSummary(cryptoReadiness)
+                : "Not inspected this session."}</p>
+              <small>{cryptoReadinessDisclaimer}</small>
+            </section>
             {selected ? <>
               <div className="detail-box"><span className="eyebrow">SECURITY</span><strong>{selected.encrypted ? "End-to-end encryption configured" : "No room encryption"}</strong><small>{selected.encrypted ? "Device verification and key backup are not implemented yet." : "Message content may be visible to the homeserver."}</small></div>
               <p className="detail-label">Room ID</p><code className="room-id">{selected.id}</code>
