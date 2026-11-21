@@ -38,4 +38,21 @@ Do not run this configuration until the signing keys and server configuration
 are reviewed. Use `docker compose -f compose.source.yaml ...` or an appropriate
 compatible container runtime only for an explicitly authorized local test.
 All production hardening and restore requirements remain open.
-\n## Configuration audit\n\nReview [docs/HOMESERVER_POLICY.md](../docs/HOMESERVER_POLICY.md).\nBefore attempting to start an explicitly authorized test server, audit the\nprivate generated homeserver.yaml using deploy/check_homeserver.py. The\npolicy enforces explicit safe development settings and rejects public\nCompose port mappings; it never prints YAML secrets, starts containers,\nor claims a deployment is secure.\n
+
+## Configuration audit
+
+Review [docs/HOMESERVER_POLICY.md](../docs/HOMESERVER_POLICY.md).
+Before attempting to start an explicitly authorized test server, audit
+the private generated homeserver.yaml and the exact Compose file selected:
+
+~~~sh
+python3 deploy/check_homeserver.py --config deploy/data/synapse/homeserver.yaml --mode local --compose deploy/compose.yaml
+~~~
+
+For a source-build preview, substitute `deploy/compose.source.yaml` and
+independently review all vendored Dockerfile risks before any image build.
+The policy checks explicit privacy settings, scoped local mounts, lack of
+public port publishing and no host namespace/privilege escalation.
+It never prints YAML secrets, launches containers, or claims a deployment
+is secure. Runtime firewall, bridge networking and TLS still require
+independent acceptance.
