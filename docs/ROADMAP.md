@@ -17,7 +17,7 @@ This is a priority plan, not a release claim.
 - [ ] Independently verify encrypted two-account, two-device send/receive and device trust.
 - [ ] Device cross-signing, key verification and secure backup/recovery.
 - [x] Add an opt-in two-account E2EE integration harness with safe local preflight.
-- [ ] Execute and pass the full two-user encrypted round trip against isolated Synapse.
+- [x] Pass isolated two-account browser encrypted text/reply and reaction-downgrade-refusal acceptance (GitHub Actions #44869616763); Android and encrypted reaction interop remain pending.
 
 ## Messaging features
 - [ ] Media, voice notes, encrypted attachments, message editing and threads.
@@ -48,16 +48,15 @@ This is a priority plan, not a release claim.
 - [ ] Security assessment, dependencies and license auditing, SBOM.
 - [ ] Native Android device QA, signed build and accessibility review (nine synthetic connected-device checks passed previously; current theme/invitation screens have not been accepted on hardware).
 - [ ] Production backup, restore, monitoring, rollback and migration drills.
-- [ ] Verified branch protection, CI and sole-maintainer PR workflow.
+- [x] Verify protected main, mandatory pull requests, required web/Android/backend CI and no bypass actors.
 
-- [ ] Execute and verify the manual GitHub-hosted disposable two-account
-  encrypted roundtrip workflow using pinned official Synapse image with
-  independent TLS validation. Source/build/static-policy checks are not a
-  substitute for a successful live acceptance run.
+- [x] Verify the pinned official Synapse disposable two-account browser
+  E2EE baseline with independently trusted ephemeral TLS (GitHub Actions
+  #44869616763, success). Source-built Synapse and Android trust gates remain.
 
-- [ ] Run the manual GitHub-hosted disposable Android 35 emulator workflow and
-  verify all synthetic Keystore/Compose instrumentation checks on the
-  source-pinned GoreeCloud UI theme. Compile-only CI is not device acceptance.
+- [x] Run the manual isolated Android 35 emulator Keystore/Compose
+  instrumentation on the source-pinned GoreeCloud UI (GitHub Actions
+  #44868265302, success). Real E2EE hardware testing remains pending.
 
 - [x] Expose read-only Android Rust SDK own-identity, recovery and backup
   states with an explicit warning that peer trust and successful encrypted
@@ -69,4 +68,4 @@ This is a priority plan, not a release claim.
   before restoring emoji action buttons. The pinned Matrix JS SDK 45.1.0
   deliberately bypasses reaction encryption, so web reaction sends are
   blocked rather than leaking emoji in plaintext. Separately verify
-  Android Rust timeline reaction wire confidentiality.
+  Android Rust timeline reactions are also now fail-closed pending ciphertext proof (PR #71).

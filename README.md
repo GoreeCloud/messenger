@@ -18,11 +18,11 @@ GoreeCloud Messenger is an open-source Matrix-compatible messaging project with 
 | Local encrypted crypto persistence | Memory-only by default; opt-in passphrase-protected IndexedDB | Non-exportable Android Keystore wraps local SQLite/session |
 | Send messages | Only in encrypted rooms | Only in encrypted rooms, via Matrix Rust SDK |
 | Emoji reactions | Temporarily disabled: SDK sends reaction metadata unencrypted | Temporarily disabled: SDK reaction encryption not verified |
-| Replies to existing messages | Encrypted room only | Encrypted room only, pending interoperability |
+| Replies to existing messages | Encrypted room; disposable web-to-web acceptance passed | Encrypted room; Android cross-device acceptance pending |
 | Native device verification and recovery | Not yet | Not yet |
 | Voice/video, media, push, moderation | Planned | Planned |
 
-No Signal-equivalent security claim is made. Web crypto depends on the upstream Matrix Rust-backed SDK, and long-term key recovery, cross-signing and device verification are not implemented. Android now uses upstream Matrix Rust SDK crypto for room timelines and encrypted send/receive, but no two-device exchange, device verification or key recovery has been accepted. The web keeps tokens and crypto state in memory by default, with an optional passphrase-protected local Rust crypto store (not server-side key recovery). Android stores its Matrix access token only inside a Keystore-wrapped local session and encrypted SQLite device database, with no OS cloud backup; this is NOT cross-device key recovery.
+No Signal-equivalent security claim is made. Web crypto depends on the upstream Matrix Rust-backed SDK, and long-term key recovery, cross-signing and device verification are not implemented. Android now uses upstream Matrix Rust SDK crypto for room timelines and encrypted send/receive, but no Android cross-device exchange, device verification or key recovery has been accepted. A separate disposable browser-to-browser encrypted send/decrypt/reply baseline passed on protected main. The web keeps tokens and crypto state in memory by default, with an optional passphrase-protected local Rust crypto store (not server-side key recovery). Android stores its Matrix access token only inside a Keystore-wrapped local session and encrypted SQLite device database, with no OS cloud backup; this is NOT cross-device key recovery.
 
 ## Repository
 
@@ -80,7 +80,7 @@ Read [Android encrypted device storage](docs/ANDROID_LOCAL_STORAGE.md), [archite
 
 The opt-in two-account live-encryption test lives at web/scripts/e2ee-smoke.mjs.
 It requires an isolated TLS homeserver and two disposable test accounts, never
-runs in public CI, and does not save credentials or encrypted keys. See
+runs automatically on pull requests, and does not save credentials or encrypted keys. See
 [docs/E2EE_TESTING.md](docs/E2EE_TESTING.md) for prerequisites, limitations and
 remaining cross-platform, device-trust and key-recovery acceptance gates.
 
@@ -133,8 +133,7 @@ content. See [disposable E2EE acceptance](docs/DISPOSABLE_E2EE_ACCEPTANCE.md).
 workflow uses an immutable, official prebuilt Synapse test image rather than
 the vendored-source build. Real Android E2EE interop, identity verification,
 key recovery, hardened source-built Synapse and full recovery acceptance
-remain separate blockers. A workflow's presence is not evidence that it
-has been executed successfully.
+remain separate blockers. The independent disposable web baseline run [#44869616763](https://github.com/GoreeCloud/messenger/actions/runs/44869616763) succeeded; the mere presence of a workflow was never evidence of execution.
 
 ## Disposable E2EE test isolation update
 

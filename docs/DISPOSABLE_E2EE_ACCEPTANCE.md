@@ -41,8 +41,8 @@ and a mandatory typed **YES** acknowledgment.
   conversation history, test messages or authentication credentials
   are uploaded as Actions artifacts.
 - The smoke harness verifies actual encrypted wire envelopes,
-  decryption by the recipient, reply and reaction relations, and a
-  missing-room downgrade refusal. Failure prints fixed redacted
+  decryption by the recipient, encrypted replies, plaintext-reaction
+  downgrade refusal, and missing-room downgrade refusal. Failure prints fixed redacted
   messages. A finally/trap cleanup stops the proxy and deletes the
   disposable container, runner-only Unix socket and generated test data.
 
@@ -122,3 +122,27 @@ any module-resolution failure without printing credentials.
 
 This only fixes test harness startup: encrypted message and device
 interop require a separately successful live manual workflow run.
+
+## First verified two-account web E2EE test — November 21, 2026 UTC
+
+[GitHub Actions run #44869616763](https://github.com/GoreeCloud/messenger/actions/runs/44869616763)
+completed **SUCCESS** on protected main with both authorization-gate
+and disposable two-account E2EE jobs successful. The test reported:
+
+> PASS: encrypted wire envelopes, two-user decryption, encrypted reply,
+> reaction plaintext downgrade refusal, and missing-room downgrade
+> prevention.
+
+The isolated server used the immutable official **prebuilt**
+Synapse 1.163.0 image, two generated nonadmin accounts, local trusted
+HTTPS, a network-disabled container and a job-only Unix socket. The
+workflow also reported successful cleanup. This is a browser-to-browser
+ciphertext text/reply baseline, not encrypted emoji reactions: the
+SDK emits reaction metadata unencrypted, so PRs #70/#71 disable
+these actions on both clients until a reviewed encrypted transport exists.
+
+The historical failed setup and plaintext-reaction runs remain
+preserved above as troubleshooting evidence, not successful acceptance.
+Open release gates include native Android cross-device E2EE, device
+identity verification/cross-signing, key recovery, source-built
+Synapse, production backup restores and independent security review.
