@@ -18,7 +18,7 @@ class SourceChecks(unittest.TestCase):
     def test_local_compose_is_loopback_only(self):
         self.assertEqual([], check_compose("compose.yaml", False))
 
-    def test_source_compose_builds_from_vendored_tree(self):
+    def test_source_compose_only_consumes_gated_local_image(self):
         self.assertEqual([], check_compose("compose.source.yaml", True))
 
     def test_exposed_public_port_is_rejected(self):

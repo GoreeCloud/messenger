@@ -1,7 +1,8 @@
 name: goreecloud-messenger-dev
 services:
   synapse:
-    image: matrixdotorg/synapse:v1.163.0
+    image: matrixdotorg/synapse@sha256:08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6
+    pull_policy: never
     restart: "no"
     environment:
       SYNAPSE_CONFIG_PATH: /data/homeserver.yaml

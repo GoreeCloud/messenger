@@ -97,11 +97,23 @@ def check_compose(name: str, require_source: bool) -> list[str]:
         errors.append(name + ": no-new-privileges missing")
     if "SYNAPSE_CONFIG_PATH: /data/homeserver.yaml" not in content:
         errors.append(name + ": explicit homeserver config missing")
+    if "pull_policy: never" not in content:
+        errors.append(name + ": preview images must never be implicitly pulled")
+    # The developer Compose workflow cannot be an alternate entrypoint
+    # for executing vendored upstream curl|sh/unstable-toolchain Dockerfiles.
+    if any(line.lstrip().startswith("build:") for line in content.splitlines()
+           if not line.lstrip().startswith("#")):
+        errors.append(name + ": implicit Compose image building is forbidden")
     if require_source:
-        if "context: ../third_party/synapse" not in content or "dockerfile: docker/Dockerfile" not in content:
-            errors.append(name + ": source build context missing")
-        if "matrixdotorg/synapse" in content:
-            errors.append(name + ": source build must not use upstream prebuilt image")
+        if "image: goreecloud-messenger/synapse:1.163.0-source-local" not in content:
+            errors.append(name + ": manually prebuilt source image required")
+        if "image: matrixdotorg/synapse" in content:
+            errors.append(name + ": source preview must not use upstream prebuilt image")
+    else:
+        official = ("image: matrixdotorg/synapse@sha256:"
+                    "08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6")
+        if official not in content:
+            errors.append(name + ": approved official development image digest required")
     return errors
 
 

@@ -10,10 +10,11 @@ Docker or a compatible container runtime is required, and the service binds to
 ~~~sh
 cd deploy
 mkdir -p data/synapse
-docker run --rm -v "$PWD/data/synapse:/data" \
+docker pull matrixdotorg/synapse@sha256:08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6
+docker run --rm --pull never --network none -v "$PWD/data/synapse:/data" \
   -e SYNAPSE_SERVER_NAME=matrix.example.org \
   -e SYNAPSE_REPORT_STATS=no \
-  matrixdotorg/synapse:v1.163.0 generate
+  matrixdotorg/synapse@sha256:08521a4b734b5474681378a2cd0a6fb9ee767529ce58dbaa987e337be8e6cfd6 generate
 ~~~
 
 4. Review data/synapse/homeserver.yaml, disable open registration, verify server name and signing-key security, and review listener/federation/storage policies. Never commit this file.
@@ -32,11 +33,24 @@ upstream Dockerfile and dependencies, `bash deploy/build_source.sh --execute`
 requests a local Podman or Docker source-image build. Do not treat this as
 reproducible, vulnerability-scanned or deployment-ready.
 
-`deploy/compose.source.yaml` selects the local source build. It retains
-loopback-only HTTP exposure, no automatic restart and separate runtime data.
-Do not run this configuration until the signing keys and server configuration
-are reviewed. Use `docker compose -f compose.source.yaml ...` or an appropriate
-compatible container runtime only for an explicitly authorized local test.
+Both Compose previews have `pull_policy: never` and no
+`build:` block. `deploy/compose.yaml` consumes the reviewed
+immutable official Synapse 1.163.0 Linux/amd64 digest, which must be
+fetched deliberately before Compose can run. `deploy/compose.source.yaml`
+consumes only the locally prebuilt
+`goreecloud-messenger/synapse:1.163.0-source-local` image.
+It cannot directly invoke the risky upstream Dockerfile via Compose.
+
+The operator-only build entrypoint remains
+`bash deploy/build_source.sh --execute --acknowledge-upstream-network-risks`.
+It still contains known mutable base images, a remote shell installer,
+a floating Rust toolchain and optional dependency-lock bypass args:
+do not execute it before separate supply-chain and source review.
+Neither Compose preview is production-ready. Both retain loopback-only
+HTTP exposure, no automatic restart and separate runtime data. Verify
+signing keys, server settings, routing and recovery independently.
+Use `docker compose -f compose.source.yaml` only in an isolated,
+authorized development environment after these gates pass.
 All production hardening and restore requirements remain open.
 
 ## Configuration audit
