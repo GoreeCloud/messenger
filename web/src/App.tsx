@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import type { MatrixClient } from "matrix-js-sdk";
-import { connect, createPrivateEncryptedRoom, leaveSession, listRooms } from "./matrix";
+import { acceptInvitation, connect, createPrivateEncryptedRoom, declineInvitation, leaveSession,
+  listInvitations, listRooms } from "./matrix";
 import { validMatrixId } from "./config";
 import { filterLoadedMessages } from "./localSearch";
 import { inviteEncryptedUser, reactEncrypted, safeMessage, sendEncryptedText } from "./security";
@@ -24,6 +25,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const rooms = useMemo(() => client ? listRooms(client) : [], [client, revision]);
+  const invitations = useMemo(() => client ? listInvitations(client) : [], [client, revision]);
   const selected = rooms.find(room => room.id === selectedId) || rooms[0];
   const myId = client?.getUserId() || "";
   const visibleMessages = selected ? filterLoadedMessages(selected.messages, messageQuery) : [];
@@ -157,6 +159,29 @@ export default function App() {
               <div className="inline-form"><input id="room-name" value={roomName} onChange={e => setRoomName(e.target.value)} placeholder="Name your room" maxLength={90} required />
                 <button className="small-primary" disabled={busy} title="Create encrypted room" aria-label="Create encrypted room" type="submit">+</button></div>
             </form>
+            {invitations.length > 0 && <section className="invite-list" aria-label="Pending room invitations">
+              <h3>Invitations ({invitations.length})</h3>
+              <p>Joining may disclose your account membership. Encryption is checked after joining; unencrypted rooms remain read-only.</p>
+              {invitations.map(invitation => <div className="invite-item" key={invitation.id}>
+                <strong>{invitation.name}</strong>
+                <div className="invite-actions">
+                  <button type="button" className="quiet bordered" disabled={busy}
+                    aria-label={"Join invited room " + invitation.name}
+                    onClick={() => client && void perform(async () => {
+                      await acceptInvitation(client, invitation.id);
+                      setRevision(n => n + 1);
+                      setNotice("Joined invited room. Check room encryption before sending.");
+                    })}>Join</button>
+                  <button type="button" className="quiet bordered" disabled={busy}
+                    aria-label={"Decline invited room " + invitation.name}
+                    onClick={() => client && void perform(async () => {
+                      await declineInvitation(client, invitation.id);
+                      setRevision(n => n + 1);
+                      setNotice("Declined room invitation.");
+                    })}>Decline</button>
+                </div>
+              </div>)}
+            </section>}
             <div className="room-list">
               {rooms.length === 0 ? <p className="muted empty">No rooms yet. Create your first encrypted conversation.</p> :
                 rooms.map(room => <button type="button" key={room.id} onClick={() => { setSelectedId(room.id); setReplyingTo(null); setMessageQuery(""); }}
