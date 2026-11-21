@@ -1,4 +1,5 @@
 import { EventType, MatrixClient, MsgType, RelationType } from "matrix-js-sdk";
+import { validMatrixId } from "./config";
 
 /** Never rely on a decorative padlock or a stale room-list flag for send authorization. */
 export async function requireEncryptedRoom(client: MatrixClient, roomId: string): Promise<void> {
@@ -15,6 +16,21 @@ export async function requireEncryptedRoom(client: MatrixClient, roomId: string)
   }
 }
 
+/** Accept only bounded Matrix event IDs, never arbitrary header/control data. */
+export function validRemoteEventId(value: string): boolean {
+  return value.startsWith("$") && value.length <= 255 && !/[\u0000-\u001f\u007f\s]/.test(value);
+}
+
+/** This preview never invites other users into unencrypted rooms. */
+export async function inviteEncryptedUser(
+  client: MatrixClient, roomId: string, userId: string,
+): Promise<void> {
+  const id = userId.trim();
+  if (!validMatrixId(id)) throw new Error("Enter a valid Matrix user ID.");
+  await requireEncryptedRoom(client, roomId);
+  await client.invite(roomId, id);
+}
+
 /** Fail closed when the client cannot establish crypto state. */
 export async function sendEncryptedText(
   client: MatrixClient, roomId: string, rawBody: string,
@@ -24,10 +40,13 @@ export async function sendEncryptedText(
   if (body.length < 1 || body.length > 4000) throw new Error("Messages must contain 1–4,000 characters.");
   await requireEncryptedRoom(client, roomId);
   if (replyingTo) {
-    if (!replyingTo.id.startsWith("$") || replyingTo.sender.length > 255) {
+    if (!validRemoteEventId(replyingTo.id) || !validMatrixId(replyingTo.sender) ||
+        typeof replyingTo.body !== "string") {
       throw new Error("Cannot reply to an invalid event.");
     }
-    const quoted = replyingTo.body.replace(/\r\n/g, "\n").split("\n").slice(0, 10)
+    // A malicious homeserver can attach a huge source body. Never let the
+    // plaintext fallback quote evade the 4,000-character user input gate.
+    const quoted = replyingTo.body.slice(0, 512).replace(/\r\n/g, "\n").split("\n").slice(0, 10)
       .map(line => "> " + line).join("\n");
     const fallback = "> <" + replyingTo.sender + "> " + quoted.replace(/^> /, "") + "\n\n" + body;
     await client.sendMessage(roomId, {
@@ -43,7 +62,7 @@ export async function sendEncryptedText(
 export async function reactEncrypted(
   client: MatrixClient, roomId: string, eventId: string, emoji: string,
 ): Promise<void> {
-  if (!eventId.startsWith("$") || !["👍", "❤️", "🎉"].includes(emoji)) {
+  if (!validRemoteEventId(eventId) || !["👍", "❤️", "🎉"].includes(emoji)) {
     throw new Error("Unsupported reaction.");
   }
   await requireEncryptedRoom(client, roomId);
@@ -73,6 +92,8 @@ export function safeMessage(error: unknown): string {
     "Messages must contain 1–4,000 characters.",
     "Unsupported reaction.",
     "Cannot reply to an invalid event.",
+    "Enter a valid Matrix user ID.",
+    "Room name must be 1–90 characters.",
   ]);
   // Exact matching only. A malicious/untrusted server error could begin
   // with a familiar prefix and append secrets, URLs, or user identifiers.
