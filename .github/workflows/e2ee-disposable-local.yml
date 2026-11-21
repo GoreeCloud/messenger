@@ -45,7 +45,8 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install bounded YAML parser for synthetic test-only configuration
-        run: python3 -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: PyYAML==6.0.4
+        run: |
+          python3 -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: PyYAML==6.0.4
       - name: Install locked Matrix JS SDK and Rust crypto dependencies
         run: npm ci --no-audit --no-fund
         working-directory: web

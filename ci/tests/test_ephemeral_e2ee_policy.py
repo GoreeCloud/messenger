@@ -28,6 +28,10 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
         for forbidden in ("pull_request:", "push:", "schedule:"):
             self.assertNotIn(forbidden, event)
 
+    def test_pip_args_with_colons_use_yaml_block_scalar_not_broken_plain_value(self):
+        self.assertIn("run: |\n          python3 -m pip install", self.workflow)
+        self.assertNotIn("run: python3 -m pip install", self.workflow)
+
     def test_authorization_gate_precedes_job_and_credentials(self):
         self.assertIn("refs/heads/main", self.workflow)
         self.assertIn('"YES"', self.workflow)
