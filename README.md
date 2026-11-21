@@ -93,3 +93,16 @@ It does not execute PostgreSQL restore or prove a recoverable deployment.
 A Caddy v2 staging-only, report-only CSP and browser privacy-header sample
 is documented at [web security headers](docs/WEB_SECURITY_HEADERS.md).
 It is not installed on the VPS or enabled in the browser bundle.
+
+## Central GoreeCloud UI adoption (source-pinned alpha)
+
+The browser uses the upstream generated `--gc-*` tokens and the native
+Android application uses the official Material 3 Expressive Compose theme.
+The first-party `GoreeCloud/gc-ui` adapter is source-vendored at a
+reviewed commit (MIT), with SHA-256 pins tested in required CI.
+See [official design-source provenance](third_party/gc-ui/SOURCE.md).
+
+This follows GoreeCloud UI's alpha design system, **not** a published Stable
+SDK or approved production visual/accessibility quality gate. The Android
+screen now follows system light/dark appearance; the existing web preview
+deliberately retains Iris/dark pending visual acceptance.
