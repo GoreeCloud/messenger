@@ -6,7 +6,7 @@
 - HTTPS homeserver required for web, with only localhost HTTP for browser development; Android requires HTTPS without exception.
 - Browser access tokens remain memory-only; Android Matrix session and SQLite crypto state are Keystore-protected in app-private, excluded-from-backup storage. No plaintext Android SharedPreferences token is used.
 - Web initializes upstream Rust-backed Matrix crypto and blocks sending into rooms considered unencrypted. New rooms request encryption.
-- Android now uses the upstream Matrix Rust SDK for room encryption, room timelines and encrypted sending. It refuses to send in plaintext rooms. **Actual E2EE interoperability and identity verification remain untested.**
+- Android now uses the upstream Matrix Rust SDK for room encryption, room timelines and encrypted sending. It refuses to send in plaintext rooms. **Android cross-device E2EE interoperability and identity verification remain untested.**
 - Server dev preview binds to 127.0.0.1, not the public network.
 - Message and member text is rendered as text in React rather than remote HTML.
 - No intentional message/token analytics or debug logging.
@@ -90,3 +90,21 @@ and does not display plaintext server-injected reactions in encrypted rooms.
 The security rule is covered by tests of the actual pinned SDK route.
 See [reaction encryption limitation](REACTION_ENCRYPTION_LIMIT.md).
 Do not count a live plaintext reaction send as E2EE acceptance.
+
+## Verified disposable two-account browser E2EE baseline
+
+The protected-main manual GitHub Actions
+[run #44869616763](https://github.com/GoreeCloud/messenger/actions/runs/44869616763)
+completed **SUCCESS** on November 21, 2026 UTC. Disposable nonadmin
+Matrix users on pinned official prebuilt Synapse 1.163.0 exchanged
+authenticated encrypted text and a reply across separately initialized
+Matrix Rust-backed browser clients. The strict harness verified
+`m.room.encrypted` wire envelopes, independent recipient decryption,
+the reply relation, refusal to send plaintext emoji reactions, and a
+missing-room plaintext downgrade refusal. Local TLS was trusted within
+the ephemeral job, and cleanup completed.
+
+This does **not** certify peer-device identities, Android-to-web
+interoperability, encrypted emoji reactions, key backup/recovery, source
+builds, real Synapse media/database/key restores, or production safety.
+Web and Android reaction sending remain disabled by PRs #70/#71.
