@@ -142,6 +142,21 @@ class MatrixEngine(context: Context) : AutoCloseable {
         vault.forget()
     }
 
+    /** Read only the local SDK identity/recovery/backup status; no resets. */
+    internal suspend fun inspectLocalCryptoStatus(): LocalCryptoStatus = withContext(Dispatchers.IO) {
+        val active = requireNotNull(client) { "Sign in before inspecting crypto status." }
+        val crypto = active.encryption()
+        try {
+            LocalCryptoStatus(
+                ownIdentity = crypto.verificationState(),
+                recovery = crypto.recoveryState(),
+                backup = crypto.backupState(),
+            )
+        } finally {
+            crypto.close()
+        }
+    }
+
     suspend fun rooms(): List<Conversation> = withContext(Dispatchers.IO) {
         val active = client ?: return@withContext emptyList()
         active.rooms().filter { it.membership() == Membership.JOINED }

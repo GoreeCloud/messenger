@@ -161,3 +161,11 @@ synthetic Android Keystore/vault and Jetpack Compose onboarding checks on
 an ephemeral API 35 emulator, without contacting any real Matrix server
 or installing on a personal phone. It is separate from required build CI.
 See [Android emulator acceptance](docs/ANDROID_EMULATOR_ACCEPTANCE.md).
+
+## Read-only Android encryption diagnostics
+
+After connection, Android can display a manually refreshed snapshot of
+the official Rust SDK's own-identity verification, recovery and backup
+states. This only reports SDK state; it neither performs verification
+nor provisions or restores encryption keys. See
+[Android crypto status](docs/ANDROID_CRYPTO_READINESS.md).

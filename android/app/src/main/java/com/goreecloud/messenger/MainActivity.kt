@@ -60,6 +60,7 @@ private fun MessengerScreen() {
     var busy by remember { mutableStateOf(false) }
     var rooms by remember { mutableStateOf<List<Conversation>>(emptyList()) }
     var invitations by remember { mutableStateOf<List<RoomInvitation>>(emptyList()) }
+    var localCryptoStatus by remember { mutableStateOf<LocalCryptoStatus?>(null) }
     var selected by remember { mutableStateOf<Conversation?>(null) }
     var messages by remember { mutableStateOf<List<TimelineEntry>>(emptyList()) }
     var messageSearch by remember { mutableStateOf("") }
@@ -95,6 +96,7 @@ private fun MessengerScreen() {
             invitations = engine.invitations()
             connected = true
             savedSession = true
+            localCryptoStatus = null
             notice = "Restored your local encrypted device. Device identity and recovery remain unverified."
         } catch (_: Exception) {
             error = "Could not restore this encrypted device. Its local keys remain intact. Retry or explicitly erase this device's local history."
@@ -118,6 +120,7 @@ private fun MessengerScreen() {
                         val serverRevoked = engine.logout()
                         connected = false; savedSession = false; orphanedDevice = false
                         selected = null; replyTo = null; rooms = emptyList(); invitations = emptyList(); messages = emptyList()
+                        localCryptoStatus = null
                         notice = if (serverRevoked) {
                             "Local encrypted device erased; server confirmed token revocation. Key recovery is unavailable."
                         } else {
@@ -201,6 +204,7 @@ private fun MessengerScreen() {
                                     connected = true
                                     savedSession = true
                                     orphanedDevice = false
+                                    localCryptoStatus = null
                                     notice = "Device keys are now encrypted locally. No trusted cross-device key recovery is configured."
                                 } catch (_: Exception) {
                                     orphanedDevice = engine.hasOrphanedLocalData()
@@ -217,7 +221,23 @@ private fun MessengerScreen() {
                 Text("Your conversations", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 TextButton(onClick = { refresh() }, enabled = !busy) { Text("Refresh") }
             }
-            Text("Messages use the Matrix Rust SDK encryption stack. Device verification, encrypted backup and key recovery are NOT enabled yet.", style = MaterialTheme.typography.bodySmall, color = soft)
+            Text("Messages use the Matrix Rust SDK encryption stack. Trusted peer-device verification, encrypted backup and key recovery are not yet accepted.", style = MaterialTheme.typography.bodySmall, color = soft)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Local SDK crypto status", modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall)
+                TextButton(enabled = !busy, onClick = {
+                    busy = true; error = ""
+                    scope.launch {
+                        try { localCryptoStatus = engine.inspectLocalCryptoStatus() }
+                        catch (_: Exception) { error = "Unable to inspect local SDK crypto status." }
+                        finally { busy = false }
+                    }
+                }) { Text("Inspect") }
+            }
+            Text(localCryptoStatus?.display() ?: "Not inspected this session.",
+                style = MaterialTheme.typography.bodySmall, color = soft)
+            Text(LocalCryptoStatus.disclaimer, style = MaterialTheme.typography.labelSmall,
+                color = soft)
             Spacer(Modifier.height(10.dp))
             if (selected == null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
