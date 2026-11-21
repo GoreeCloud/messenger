@@ -130,3 +130,6 @@ button.bordered{border:1px solid var(--outline);width:100%}
 .erase-device-panel input{margin-bottom:10px}
 .erase-device-button{color:var(--gc-on-negative);background:var(--gc-negative);border:1px solid var(--gc-outline-soft);border-radius:var(--gc-radius-sm);min-height:var(--gc-control-min);font-weight:700;padding:8px 12px}
 .erase-device-button:disabled{opacity:var(--gc-opacity-disabled)}
+
+/* Reaction content is never published without verified E2EE semantics. */
+.reaction-notice{font-size:.73rem;line-height:1.4;color:var(--gc-text-soft)}

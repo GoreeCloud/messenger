@@ -169,3 +169,12 @@ the official Rust SDK's own-identity verification, recovery and backup
 states. This only reports SDK state; it neither performs verification
 nor provisions or restores encryption keys. See
 [Android crypto status](docs/ANDROID_CRYPTO_READINESS.md).
+
+## Encrypted reaction safety
+
+Browser emoji-reaction sending is temporarily **disabled**. Disposable
+Matrix interoperability testing proved pinned Matrix JS SDK 45.1.0
+transmits `m.reaction` metadata and emoji without E2EE even in a private
+encrypted room. The app does not leak reaction content while claiming
+end-to-end privacy; message and encrypted reply functionality remains.
+See [verified reaction encryption limitation](docs/REACTION_ENCRYPTION_LIMIT.md).

@@ -5,7 +5,7 @@ import { acceptInvitation, connect, createPrivateEncryptedRoom, declineInvitatio
 import { validMatrixId } from "./config";
 import { filterLoadedMessages } from "./localSearch";
 import { eraseBrowserCryptoDevice } from "./eraseDevice";
-import { inviteEncryptedUser, reactEncrypted, safeMessage, sendEncryptedText } from "./security";
+import { inviteEncryptedUser, safeMessage, sendEncryptedText } from "./security";
 import type { MessageView } from "./matrix";
 
 export default function App() {
@@ -264,12 +264,9 @@ export default function App() {
                         <button type="button" className="message-action"
                           aria-label={"Reply to message from " + message.sender}
                           onClick={() => setReplyingTo(message)}>Reply</button>
-                        {(["👍", "❤️", "🎉"] as const).map(emoji => <button type="button" key={emoji}
-                          className="message-action" disabled={busy} aria-label={"React with " + emoji + " to message from " + message.sender}
-                          onClick={() => client && void perform(async () => {
-                            await reactEncrypted(client, selected.id, message.id, emoji);
-                            setNotice("Reaction sent to the encrypted room.");
-                          })}>{emoji}</button>)}
+                        <span className="reaction-notice" role="status">
+                          Reactions disabled: the pinned SDK would expose the emoji without E2EE.
+                        </span>
                         {message.reactions.map(({emoji, count}) => <span className="reaction-pill" key={emoji}>{emoji} {count}</span>)}
                       </div>}
                     </article>)}

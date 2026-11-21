@@ -1,4 +1,4 @@
-import { EventType, MatrixClient, MsgType, RelationType } from "matrix-js-sdk";
+import { MatrixClient, MsgType } from "matrix-js-sdk";
 import { validMatrixId } from "./config.ts";
 
 /** Never rely on a decorative padlock or a stale room-list flag for send authorization. */
@@ -64,6 +64,11 @@ export async function sendEncryptedText(
   }
 }
 
+/**
+ * Explicitly fail closed: the pinned Matrix JS SDK 45.1.0 deliberately
+ * exempts m.reaction from E2EE (shouldEncryptEventForRoom), exposing its
+ * emoji/relation on the wire. Never call sendEvent while promising privacy.
+ */
 export async function reactEncrypted(
   client: MatrixClient, roomId: string, eventId: string, emoji: string,
 ): Promise<void> {
@@ -71,9 +76,7 @@ export async function reactEncrypted(
     throw new Error("Unsupported reaction.");
   }
   await requireEncryptedRoom(client, roomId);
-  await client.sendEvent(roomId, EventType.Reaction, {
-    "m.relates_to": { rel_type: RelationType.Annotation, event_id: eventId, key: emoji },
-  });
+  throw new Error("Encrypted reactions are unavailable with this Matrix SDK.");
 }
 
 /** Log no passwords, access tokens, or raw server payloads into the user interface. */
@@ -96,6 +99,7 @@ export function safeMessage(error: unknown): string {
     "Cryptographic room state is unavailable. Message was not sent.",
     "Messages must contain 1–4,000 characters.",
     "Unsupported reaction.",
+    "Encrypted reactions are unavailable with this Matrix SDK.",
     "Cannot reply to an invalid event.",
     "Enter a valid Matrix user ID.",
     "Room name must be 1–90 characters.",
