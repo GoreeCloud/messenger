@@ -144,10 +144,29 @@ export async function createPrivateEncryptedRoom(client: MatrixClient, name: str
   return result.room_id;
 }
 
-export async function leaveSession(client: MatrixClient): Promise<void> {
-  client.stopClient();
-  try { await client.logout(); } catch { /* App access token is still discarded. */ }
-  finally {
+/**
+ * Always drop the local client even when the homeserver cannot be reached.
+ * A successful server-side /logout must be distinguished from an offline
+ * local-only sign-out; do not suggest the old device token was revoked.
+ */
+export async function leaveSession(
+  client: MatrixClient, timeoutMs = 8000,
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    client.stopClient();
+    await Promise.race([
+      client.logout(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Server logout timed out.")), timeoutMs);
+      }),
+    ]);
+    return true;
+  } catch {
+    // Intentionally do not forward SDK errors containing account data.
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
     cryptoLeases.get(client)?.release();
     cryptoLeases.delete(client);
   }
