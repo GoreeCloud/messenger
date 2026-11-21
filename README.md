@@ -87,3 +87,9 @@ An offline, non-destructive integrity validator for operator-prepared
 PostgreSQL snapshots and optional media bundles is documented at
 [Synapse restore rehearsal](docs/SNAPSHOT_RESTORE_REHEARSAL.md).
 It does not execute PostgreSQL restore or prove a recoverable deployment.
+
+## Nondeployed web security header example
+
+A Caddy v2 staging-only, report-only CSP and browser privacy-header sample
+is documented at [web security headers](docs/WEB_SECURITY_HEADERS.md).
+It is not installed on the VPS or enabled in the browser bundle.
