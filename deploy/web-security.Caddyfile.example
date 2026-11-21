@@ -1,0 +1,18 @@
+# Example only. Do not deploy this placeholder domain unmodified.
+# Serves the built React/Vite preview; does NOT configure a Matrix homeserver.
+messenger.example.invalid {
+    root * /srv/goreecloud/messenger-web/dist
+    encode zstd gzip
+    try_files {path} /index.html
+    file_server
+
+    header {
+        Referrer-Policy "no-referrer"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Permissions-Policy "geolocation=(), payment=(), usb=()"
+        # Report-Only: promote to enforcing CSP only after testing the SDK
+        # WASM/worker, login, room loading and complete Android/web flows.
+        Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: wss:; img-src 'self' data: blob:; style-src 'self'; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    }
+}
