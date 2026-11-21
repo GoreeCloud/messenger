@@ -77,6 +77,12 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
         self.assertNotIn("--publish", self.runner)
         self.assertNotIn("0.0.0.0", self.runner)
 
+    def test_native_node_harness_import_preflight_precedes_any_image_pull(self):
+        preflight = self.runner.index("node web/scripts/e2ee-smoke.mjs --help")
+        pull = self.runner.index('docker pull --quiet "$image"')
+        self.assertLess(preflight, pull)
+        self.assertIn("BLOCKED: native Node E2EE harness modules", self.runner)
+
     def test_synthetic_registration_is_explicitly_noninteractive_nonadmin(self):
         # Synapse prompts on stdin for admin choice unless --no-admin is set.
         lines = self.runner.splitlines()
