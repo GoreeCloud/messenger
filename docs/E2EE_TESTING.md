@@ -48,3 +48,22 @@ Server event histories still persist and contain routing metadata.
 
 Output may only be called a live integration pass after an actual server run
 succeeds. Never report a passing preflight alone as interoperable E2EE.
+
+## Stronger encrypted-wire acceptance
+
+The live two-account harness now checks the **raw Matrix event wire type**
+for m.room.encrypted, not only the decrypted event type/body. It verifies
+a recipient can decrypt the originating message, the sender can decrypt
+an encrypted reply referencing the original remote event ID, and the sender
+can decrypt an encrypted emoji reaction. It still asserts that a missing
+room cannot be used for plaintext sending. Wire-event shape and relation
+checks are unit-tested without live credentials or a server.
+
+**No live run is implied by passing unit tests or CI.** Use only two
+disposable accounts on a verified HTTPS, isolated test server; the test
+leaves behind server-side event history and attempts to clean up test
+devices/rooms, which cannot be guaranteed after partial server failures.
+
+Device trust/cross-signing, secret backup/recovery, Android-to-web
+interoperability, durable crypto state across reload, replays, performance,
+and production readiness are not established by this browser-only harness.
