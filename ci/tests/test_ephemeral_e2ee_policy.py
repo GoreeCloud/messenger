@@ -77,6 +77,15 @@ class DisposableMatrixPolicyTests(unittest.TestCase):
         self.assertNotIn("--publish", self.runner)
         self.assertNotIn("0.0.0.0", self.runner)
 
+    def test_synthetic_registration_is_explicitly_noninteractive_nonadmin(self):
+        # The official Synapse 1.163.0 CLI prompts for admin status unless
+        # --no-admin is supplied even when user and password are provided.
+        self.assertEqual(2, self.runner.count(
+            "register_new_matrix_user \\\
+  --no-admin --config /data/homeserver.yaml"
+        ))
+        self.assertNotIn("--admin --config", self.runner)
+
     def test_rejects_unacknowledged_local_execution_without_docker(self):
         code = subprocess.run(
             ["bash", str(RUNNER)], capture_output=True, text=True, timeout=5,
