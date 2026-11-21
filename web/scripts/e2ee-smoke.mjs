@@ -7,7 +7,10 @@
 import { randomUUID } from "node:crypto";
 import { EventType, Preset, Visibility, createClient } from "matrix-js-sdk";
 import { readTestEnvironment, requiredNames } from "./e2ee-config.mjs";
-import { requireEncryptedRoom, sendEncryptedText } from "../src/security.ts";
+import { requireEncryptedRoom, sendEncryptedText, reactEncrypted } from "../src/security.ts";
+import {
+  findEncryptedEvent, isEncryptedReaction, isEncryptedReply,
+} from "./e2ee-observations.mjs";
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(predicate, timeoutMs, purpose) {
@@ -70,6 +73,7 @@ async function main() {
   const env = readTestEnvironment(process.env);
   let first, second, roomId = "";
   const nonce = "gc-e2ee-smoke-" + randomUUID();
+  const responseNonce = "gc-e2ee-reply-" + randomUUID();
   console.log("Testing two-account Matrix E2EE round trip using disposable devices.");
   try {
     const sessions = await Promise.allSettled([
@@ -101,17 +105,39 @@ async function main() {
     await requireEncryptedRoom(first, roomId);
     await requireEncryptedRoom(second, roomId);
     await bounded(sendEncryptedText(first, roomId, nonce), env.timeoutMs, "encrypted send");
+    let received;
     await until(() => {
-      const events = second.getRoom(roomId)?.getLiveTimeline().getEvents() || [];
-      return events.some(event => event.getType() === EventType.RoomMessage &&
-        !event.isDecryptionFailure() && event.getSender() === first.getUserId() &&
-        event.getContent().body === nonce);
-    }, env.timeoutMs, "recipient decrypted payload");
+      received = findEncryptedEvent(
+        second.getRoom(roomId)?.getLiveTimeline().getEvents(),
+        EventType.RoomMessage, first.getUserId(),
+        content => content.body === nonce,
+      );
+      return Boolean(received);
+    }, env.timeoutMs, "recipient decrypted actual ciphertext envelope");
+    // A decrypted RoomMessage event alone is insufficient: getWireType must
+    // still be m.room.encrypted, not a server-injected plaintext m.room.message.
+    const eventId = received.getId();
+    await bounded(sendEncryptedText(
+      second, roomId, responseNonce,
+      { id: eventId, sender: first.getUserId(), body: nonce },
+    ), env.timeoutMs, "encrypted reply");
+    await until(() => Boolean(findEncryptedEvent(
+      first.getRoom(roomId)?.getLiveTimeline().getEvents(),
+      EventType.RoomMessage, second.getUserId(),
+      content => isEncryptedReply(content, eventId, responseNonce),
+    )), env.timeoutMs, "sender decrypted ciphertext reply with original relation");
+    await bounded(reactEncrypted(second, roomId, eventId, "👍"),
+      env.timeoutMs, "encrypted reaction");
+    await until(() => Boolean(findEncryptedEvent(
+      first.getRoom(roomId)?.getLiveTimeline().getEvents(),
+      EventType.Reaction, second.getUserId(),
+      content => isEncryptedReaction(content, eventId, "👍"),
+    )), env.timeoutMs, "sender decrypted ciphertext reaction relation");
     let blocked = false;
     try { await sendEncryptedText(first, "!missing:invalid.example", nonce); }
     catch { blocked = true; }
     if (!blocked) throw new Error("Plaintext downgrade gate unexpectedly allowed sending.");
-    console.log("PASS: encrypted send, recipient decryption, and missing-room downgrade prevention.");
+    console.log("PASS: actual encrypted wire envelopes, two-user decryption, reply relation, reaction, and missing-room downgrade prevention.");
     console.log("Not covered: trusted identities, cross-signing, key recovery or Android devices.");
   } catch {
     // Never print upstream error strings; providers may put tokens or payloads there.
