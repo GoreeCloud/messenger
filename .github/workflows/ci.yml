@@ -42,6 +42,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Verify official Gradle wrapper scripts and JAR before execution
+        run: python3 ci/check_android_wrapper.py
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
