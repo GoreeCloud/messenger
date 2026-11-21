@@ -153,3 +153,11 @@ through an operator-only, explicitly acknowledged command after
 supply-chain review. See [backend setup](deploy/README.md) and
 [homeserver policy](docs/HOMESERVER_POLICY.md). No Synapse
 production deployment or real backup recovery is asserted.
+
+## Manual isolated Android instrumentation
+
+A protected-main, **manual-only** GitHub Actions workflow exercises the
+synthetic Android Keystore/vault and Jetpack Compose onboarding checks on
+an ephemeral API 35 emulator, without contacting any real Matrix server
+or installing on a personal phone. It is separate from required build CI.
+See [Android emulator acceptance](docs/ANDROID_EMULATOR_ACCEPTANCE.md).
